@@ -1,9 +1,13 @@
 {
   "dependencies": {
+    "@react-native-community/cli": "latest",
     "@tensorflow-models/posenet": "^2.2.2",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-react-native": "^1.0.0",
-    "@react-native-community/cli": "latest",
+    "expo": "^53.0.20",
+    "expo-router": "^5.1.4",
+    "expo-splash-screen": "^0.30.10",
+    "metro": "^0.83.1",
     "react-native-camera": "^4.2.1",
     "react-native-fs": "^2.20.0"
   }
