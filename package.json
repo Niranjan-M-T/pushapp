@@ -1,9 +1,0 @@
-{
-  "dependencies": {
-    "@tensorflow-models/posenet": "^2.2.2",
-    "@tensorflow/tfjs": "^4.22.0",
-    "@tensorflow/tfjs-react-native": "^1.0.0",
-    "react-native-camera": "^4.2.1",
-    "react-native-fs": "^2.20.0"
-  }
-}
