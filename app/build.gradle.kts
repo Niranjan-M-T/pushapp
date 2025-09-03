@@ -27,17 +27,17 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
     buildFeatures {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
+        kotlinCompilerExtensionVersion = "1.5.3"
     }
 }
 
@@ -63,7 +63,7 @@ dependencies {
     // ML Kit Pose Detection
     implementation(libs.mlkit.pose) // This is com.google.mlkit:pose-detection:18.0.0-beta4
     implementation(libs.mlkit.pose.accurate) // This is com.google.mlkit:pose-detection-accurate:18.0.0-beta4
-    implementation("com.google.mlkit:vision-common:18.0.0")
+    api("com.google.mlkit:vision-common:17.3.0") // Changed to api
     
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -72,4 +72,11 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    // Add this to force the version of vision-common
+    constraints {
+        implementation("com.google.mlkit:vision-common:17.3.0") {
+            because("Avoids conflict with beta pose detection libraries asking for a non-existent version")
+        }
+    }
 }
