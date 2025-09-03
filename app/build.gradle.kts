@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    id("kotlin-kapt")
+    id("com.google.devtools.ksp") version "1.9.21-1.0.15"
 }
 
 android {
@@ -37,7 +39,11 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.3"
+        kotlinCompilerExtensionVersion = "1.5.6"
+    }
+    
+    lint {
+        baseline = file("lint-baseline.xml")
     }
 }
 
@@ -48,11 +54,20 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    
+    // Navigation Compose
+    implementation("androidx.navigation:navigation-compose:2.7.5")
+    
+    // Room Database - Using KSP instead of kapt for better Java 17+ compatibility
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1") // Using KSP instead of kapt
     
     // CameraX
     implementation(libs.camerax.core)
@@ -61,9 +76,9 @@ dependencies {
     implementation(libs.camerax.view)
     
     // ML Kit Pose Detection
-    implementation(libs.mlkit.pose) // This is com.google.mlkit:pose-detection:18.0.0-beta4
-    implementation(libs.mlkit.pose.accurate) // This is com.google.mlkit:pose-detection-accurate:18.0.0-beta4
-    api("com.google.mlkit:vision-common:17.3.0") // Changed to api
+    implementation(libs.mlkit.pose) // This is com.google.mlkit:pose-detection:17.1.3
+    implementation(libs.mlkit.pose.accurate) // This is com.google.mlkit:pose-detection-accurate:17.1.3
+    implementation("com.google.mlkit:vision-common:17.3.0")
     
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -72,11 +87,4 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-
-    // Add this to force the version of vision-common
-    constraints {
-        implementation("com.google.mlkit:vision-common:17.3.0") {
-            because("Avoids conflict with beta pose detection libraries asking for a non-existent version")
-        }
-    }
 }

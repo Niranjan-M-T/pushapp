@@ -1,131 +1,119 @@
-# Push-Up Counter App
+# App Lock - Push-Up Verification System
 
-A real-time Android application that uses TensorFlow Lite and ML Kit pose detection to count push-ups through the front camera.
+A comprehensive Android application that locks social media and other apps when users exceed daily time limits, requiring them to complete push-ups to unlock.
 
 ## Features
 
-- **Real-time Pose Detection**: Uses ML Kit's accurate pose detection to track body movements
-- **Push-up Counting**: Automatically counts completed push-up repetitions
-- **Front Camera Integration**: Uses the device's front camera for self-monitoring
-- **Modern UI**: Built with Jetpack Compose for a clean, responsive interface
-- **Live Camera Preview**: Shows real-time camera feed with pose detection overlay
+### 🔒 App Locking System
+- **Selective App Locking**: Choose which applications to monitor and lock
+- **Daily Time Limits**: Set custom daily usage limits for each app (in minutes)
+- **Automatic Monitoring**: Background service tracks app usage in real-time
+- **Smart Notifications**: Get notified when apps are locked due to time limits
 
-## How It Works
+### 💪 Push-Up Verification
+- **Enhanced Interface**: Full-screen camera preview with reduced opacity for better visibility
+- **Real-time Instructions**: Dynamic guidance based on user position and form
+- **Blue Markers**: Visual indicators for proper body positioning
+- **Encouraging Messages**: Motivational text that changes based on progress
+- **Form Validation**: Ensures proper push-up technique before counting
 
-The app uses computer vision and machine learning to:
+### 🎨 Modern UI/UX
+- **Black-Grey Theme**: Sleek dark interface with red accent colors
+- **Responsive Design**: Optimized for both portrait and landscape orientations
+- **Intuitive Navigation**: Easy-to-use dashboard and settings screens
+- **Visual Feedback**: Clear indicators for locked apps and usage statistics
 
-1. **Capture Video**: Continuously captures frames from the front camera
-2. **Pose Detection**: Analyzes each frame to identify key body landmarks (shoulders, elbows, wrists, hips)
-3. **Angle Calculation**: Calculates the angles between body joints to determine push-up position
-4. **State Machine**: Tracks whether the user is in the "down" or "up" position of a push-up
-5. **Repetition Counting**: Increments the counter when a complete push-up cycle is detected
+## Technical Architecture
 
-## Technical Implementation
+### Data Layer
+- **Room Database**: Local storage for app lock settings and push-up configurations
+- **Usage Stats API**: Android system integration for app usage monitoring
+- **Data Models**: Structured entities for app settings, push-up requirements, and user preferences
 
-### Dependencies
+### Service Layer
+- **AppLockService**: Background service for continuous app usage monitoring
+- **AppLockManager**: Business logic for app locking, unlocking, and verification
+- **PushUpDetection**: ML Kit integration for accurate push-up counting
 
-- **ML Kit Pose Detection**: For accurate body landmark detection
-- **CameraX**: For camera functionality and preview
-- **TensorFlow Lite**: For on-device machine learning capabilities
-- **Jetpack Compose**: For modern UI development
-- **ViewModel**: For state management and business logic
+### UI Layer
+- **Jetpack Compose**: Modern declarative UI framework
+- **Navigation**: Single Activity with multiple composable screens
+- **State Management**: ViewModel with StateFlow for reactive UI updates
 
-### Architecture
+## Screens
 
-- **MainActivity**: Main entry point with camera permission handling
-- **PushUpViewModel**: Manages camera operations and pose analysis
-- **PoseDetectionHelper**: Handles pose analysis and angle calculations
-- **CameraPreview**: Composable for camera preview display
+### 1. Dashboard
+- Overview of locked apps and statistics
+- Quick actions for settings and push-up training
+- List of currently locked applications
 
-### Push-up Detection Algorithm
+### 2. App Selection
+- Browse installed applications
+- Toggle app locking on/off
+- Configure daily time limits
+- Set push-up requirements for unlocking
 
-The app detects push-ups by monitoring:
+### 3. Push-Up Interface
+- Full-screen camera preview
+- Real-time pose detection
+- Dynamic instructions and encouragement
+- Progress tracking and completion verification
 
-1. **Elbow Angle**: 
-   - Down position: < 90° (arms bent)
-   - Up position: > 160° (arms extended)
+## Setup & Permissions
 
-2. **Shoulder Angle**:
-   - Down position: < 45° (body lowered)
-   - Up position: > 45° (body raised)
+### Required Permissions
+- **Camera**: For push-up detection and verification
+- **Usage Stats**: For monitoring app usage (requires user approval)
+- **Foreground Service**: For continuous background monitoring
+- **Notifications**: For app lock alerts
 
-3. **State Transitions**:
-   - Must go from down → up position to count a repetition
-   - Resets state when returning to standing position
+### Installation
+1. Build and install the APK
+2. Grant camera permission when prompted
+3. Navigate to Settings > Apps > App Lock > Usage Access
+4. Enable usage access for the app
+5. Configure which apps to lock and set time limits
 
-## Setup and Installation
+## Usage Workflow
 
-### Prerequisites
+1. **Setup**: Select apps to lock and configure time limits
+2. **Monitoring**: App automatically tracks usage throughout the day
+3. **Locking**: When time limit is exceeded, app becomes locked
+4. **Unlocking**: Complete required push-ups to regain access
+5. **Reset**: Daily limits reset at midnight
 
-- Android Studio Arctic Fox or later
-- Android SDK 24+ (Android 7.0+)
-- Device with front camera
-- Camera permissions
+## Benefits
 
-### Building the App
+- **Digital Wellness**: Promotes healthy device usage habits
+- **Physical Activity**: Encourages regular exercise through push-ups
+- **Productivity**: Reduces time spent on distracting applications
+- **Customizable**: Flexible settings for different apps and user preferences
+- **Privacy**: All data stored locally on device
 
-1. Clone the repository
-2. Open in Android Studio
-3. Sync Gradle dependencies
-4. Build and run on a physical device
+## Technical Requirements
 
-### Permissions
-
-The app requires:
-- `CAMERA` permission for video capture
-- Front camera hardware support
-
-## Usage
-
-1. **Launch**: Open the app and grant camera permissions
-2. **Position**: Stand in front of the camera, facing it
-3. **Start**: Tap "Start" to begin push-up detection
-4. **Exercise**: Perform push-ups in view of the camera
-5. **Monitor**: Watch the counter increment with each completed push-up
-6. **Stop**: Tap "Stop" to pause detection
-7. **Reset**: Use "Reset" to clear the counter
-
-## Tips for Best Results
-
-- **Good Lighting**: Ensure adequate lighting for better pose detection
-- **Clear Background**: Avoid cluttered backgrounds
-- **Full Body View**: Keep your entire upper body in frame
-- **Proper Form**: Maintain standard push-up form for accurate counting
-- **Stable Position**: Keep the device steady during use
-
-## Troubleshooting
-
-### Common Issues
-
-- **Camera Not Working**: Check camera permissions in device settings
-- **No Pose Detection**: Ensure good lighting and clear view of body
-- **Inaccurate Counting**: Adjust position to keep full upper body in frame
-- **App Crashes**: Restart app and check device compatibility
-
-### Performance Notes
-
-- Works best on devices with good camera quality
-- May use significant battery due to continuous camera and ML processing
-- Performance varies based on device hardware capabilities
+- **Android**: API 24+ (Android 7.0+)
+- **Camera**: Front-facing camera required
+- **Storage**: Local database for settings and configurations
+- **Permissions**: Usage stats access (system-level permission)
 
 ## Future Enhancements
 
-- **Exercise Variety**: Support for other exercises (squats, planks, etc.)
-- **Form Feedback**: Real-time form correction suggestions
-- **Workout Tracking**: Save and analyze workout sessions
+- **Multiple Exercise Types**: Support for different workout activities
 - **Social Features**: Share achievements and compete with friends
-- **Customization**: Adjustable detection sensitivity and thresholds
+- **Analytics**: Detailed usage and fitness statistics
+- **Cloud Sync**: Backup settings across devices
+- **Custom Workouts**: Create personalized exercise routines
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+This project demonstrates modern Android development practices including:
+- Jetpack Compose for UI
+- Room database for local storage
+- MVVM architecture with ViewModels
+- Coroutines and Flow for asynchronous operations
+- ML Kit integration for pose detection
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- ML Kit team for pose detection capabilities
-- TensorFlow team for the machine learning framework
-- Android team for CameraX and modern development tools
+This project is for educational and personal use. Please respect the terms of any third-party libraries and APIs used.

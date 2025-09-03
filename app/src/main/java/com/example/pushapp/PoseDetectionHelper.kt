@@ -14,10 +14,10 @@ class PoseDetectionHelper {
         private const val TAG = "PoseDetectionHelper"
         
         // Default push-up detection thresholds - UPDATED FOR BETTER DETECTION
-        private const val DEFAULT_ELBOW_DOWN_THRESHOLD = 115f  // Elbow down when < 115°
-        private const val DEFAULT_ELBOW_UP_THRESHOLD = 172f    // 165-180° range for up position
-        private const val DEFAULT_SHOULDER_DOWN_THRESHOLD = 90f // Shoulder down when > 90°
-        private const val DEFAULT_SHOULDER_UP_THRESHOLD = 17f   // 10-25° range for up position
+        private const val DEFAULT_ELBOW_DOWN_THRESHOLD = 135f  // Elbow down when < 135° (more realistic)
+        private const val DEFAULT_ELBOW_UP_THRESHOLD = 160f    // Elbow up when > 160° (reduced from 170° by 10°)
+        private const val DEFAULT_SHOULDER_DOWN_THRESHOLD = 37f // Shoulder down when > 37° (more realistic)
+        private const val DEFAULT_SHOULDER_UP_THRESHOLD = 27f   // Shoulder up when < 27° (increased from 17° by 10°)
         
         // Confidence threshold for landmark detection
         private const val CONFIDENCE_THRESHOLD = 0.5f
@@ -59,6 +59,7 @@ class PoseDetectionHelper {
         val landmarks = pose.allPoseLandmarks
         
         if (landmarks.isEmpty()) {
+            Log.d(TAG, "No pose landmarks detected")
             return PushUpState()
         }
         
@@ -96,41 +97,64 @@ class PoseDetectionHelper {
             it.landmarkType == PoseLandmark.RIGHT_HIP 
         }
         
+        // Check if we have enough landmarks for analysis
+        val requiredLandmarks = listOf(leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist, leftHip, rightHip)
+        val missingLandmarks = requiredLandmarks.count { it == null }
+        
+        if (missingLandmarks > 0) {
+            Log.d(TAG, "Missing $missingLandmarks landmarks for pose analysis")
+            return PushUpState()
+        }
+        
         if (leftShoulder != null && rightShoulder != null && 
             leftElbow != null && rightElbow != null && 
             leftWrist != null && rightWrist != null &&
             leftHip != null && rightHip != null) {
             
-            // Calculate angles
-            val leftElbowAngle = calculateAngle(leftShoulder.position, leftElbow.position, leftWrist.position)
-            val rightElbowAngle = calculateAngle(rightShoulder.position, rightElbow.position, rightWrist.position)
-            val leftShoulderAngle = calculateAngle(leftElbow.position, leftShoulder.position, leftHip.position)
-            val rightShoulderAngle = calculateAngle(rightElbow.position, rightShoulder.position, rightHip.position)
-            
-            // Average angles for more stable detection
-            val avgElbowAngle = (leftElbowAngle + rightElbowAngle) / 2f
-            val avgShoulderAngle = (leftShoulderAngle + rightShoulderAngle) / 2f
-            
-            Log.d(TAG, "Elbow: ${avgElbowAngle.toInt()}°, Shoulder: ${avgShoulderAngle.toInt()}°")
-            
-            // Determine push-up state based on angles
-            val isInDownPosition = avgElbowAngle < elbowDownThreshold && avgShoulderAngle > shoulderDownThreshold
-            val isInUpPosition = avgElbowAngle > elbowUpThreshold && avgShoulderAngle < shoulderUpThreshold
-            
-            // Add detailed logging for debugging
-            Log.d(TAG, "=== POSE ANALYSIS ===")
-            Log.d(TAG, "Elbow: ${avgElbowAngle.toInt()}° (Down: <${elbowDownThreshold}°, Up: >${elbowUpThreshold}°)")
-            Log.d(TAG, "Shoulder: ${avgShoulderAngle.toInt()}° (Down: <${shoulderDownThreshold}°, Up: >${shoulderUpThreshold}°)")
-            Log.d(TAG, "Down Position: $isInDownPosition")
-            Log.d(TAG, "Up Position: $isInUpPosition")
-            Log.d(TAG, "=====================")
-            
-            return PushUpState(
-                isInDownPosition = isInDownPosition,
-                isInUpPosition = isInUpPosition,
-                currentElbowAngle = avgElbowAngle,
-                currentShoulderAngle = avgShoulderAngle
-            )
+            try {
+                // Calculate angles
+                val leftElbowAngle = calculateAngle(leftShoulder.position, leftElbow.position, leftWrist.position)
+                val rightElbowAngle = calculateAngle(rightShoulder.position, rightElbow.position, rightWrist.position)
+                val leftShoulderAngle = calculateAngle(leftElbow.position, leftShoulder.position, leftHip.position)
+                val rightShoulderAngle = calculateAngle(rightElbow.position, rightShoulder.position, rightHip.position)
+                
+                // Check if angles are valid (not NaN or infinite)
+                if (leftElbowAngle.isNaN() || rightElbowAngle.isNaN() || 
+                    leftShoulderAngle.isNaN() || rightShoulderAngle.isNaN() ||
+                    leftElbowAngle.isInfinite() || rightElbowAngle.isInfinite() ||
+                    leftShoulderAngle.isInfinite() || rightShoulderAngle.isInfinite()) {
+                    Log.w(TAG, "Invalid angles calculated, skipping pose analysis")
+                    return PushUpState()
+                }
+                
+                // Average angles for more stable detection
+                val avgElbowAngle = (leftElbowAngle + rightElbowAngle) / 2f
+                val avgShoulderAngle = (leftShoulderAngle + rightShoulderAngle) / 2f
+                
+                Log.d(TAG, "Elbow: ${avgElbowAngle.toInt()}°, Shoulder: ${avgShoulderAngle.toInt()}°")
+                
+                // Determine push-up state based on angles
+                val isInDownPosition = avgElbowAngle < elbowDownThreshold && avgShoulderAngle > shoulderDownThreshold
+                val isInUpPosition = avgElbowAngle > elbowUpThreshold && avgShoulderAngle < shoulderUpThreshold
+                
+                // Add detailed logging for debugging
+                Log.d(TAG, "=== POSE ANALYSIS ===")
+                Log.d(TAG, "Elbow: ${avgElbowAngle.toInt()}° (Down: <${elbowDownThreshold}°, Up: >${elbowUpThreshold}°)")
+                Log.d(TAG, "Shoulder: ${avgShoulderAngle.toInt()}° (Down: <${shoulderDownThreshold}°, Up: >${shoulderUpThreshold}°)")
+                Log.d(TAG, "Down Position: $isInDownPosition")
+                Log.d(TAG, "Up Position: $isInUpPosition")
+                Log.d(TAG, "=====================")
+                
+                return PushUpState(
+                    isInDownPosition = isInDownPosition,
+                    isInUpPosition = isInUpPosition,
+                    currentElbowAngle = avgElbowAngle,
+                    currentShoulderAngle = avgShoulderAngle
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calculating angles", e)
+                return PushUpState()
+            }
         }
         
         return PushUpState()

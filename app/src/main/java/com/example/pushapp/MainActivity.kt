@@ -1,39 +1,52 @@
 package com.example.pushapp
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import android.util.Log
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import kotlinx.coroutines.delay
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.example.pushapp.ui.*
+import com.example.pushapp.ui.theme.PushAppTheme
+import com.example.pushapp.integration.PushUpIntegration
+import com.example.pushapp.utils.AppLogger
 
 class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            // Permission granted, camera will be initialized when the app starts
-            Log.d("MainActivity", "Camera permission granted")
+            // Permission granted - camera should work now
+            android.util.Log.d("MainActivity", "Camera permission granted")
         } else {
-            // Permission denied, show a message to the user
-            Log.w("MainActivity", "Camera permission denied")
-            // You could show a dialog here explaining why camera permission is needed
+            // Permission denied - show message
+            android.util.Log.w("MainActivity", "Camera permission denied")
         }
+    }
+    
+    private val requestUsageStatsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Handle usage stats permission result
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,577 +61,214 @@ class MainActivity : ComponentActivity() {
                 // Permission already granted
             }
             else -> {
+                // Request camera permission directly
                 requestPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
         }
         
+        // Check usage stats permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            val appOps = getSystemService(APP_OPS_SERVICE) as android.app.AppOpsManager
+            val mode = appOps.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+            
+            if (mode != android.app.AppOpsManager.MODE_ALLOWED) {
+                // Request usage stats permission directly
+                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                requestUsageStatsPermissionLauncher.launch(intent)
+            }
+        }
+        
+        // Check foreground service permission for Android 12+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(
+                this,
+                "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+            ) != PackageManager.PERMISSION_GRANTED) {
+                // Request the permission
+                requestPermissionLauncher.launch("android.permission.FOREGROUND_SERVICE_SPECIAL_USE")
+            }
+        }
+        
         setContent {
-            PushUpApp()
+            PushAppTheme {
+                AppLockApp()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Service status will be checked when the app initializes
+        
+        // Check if we should open push-up screen from notification
+        intent?.let { intent ->
+            if (intent.getBooleanExtra("openPushUpScreen", false)) {
+                val lockedAppPackage = intent.getStringExtra("lockedAppPackage")
+                if (lockedAppPackage != null) {
+                    AppLogger.i("MainActivity", "Opening push-up screen for locked app: $lockedAppPackage")
+                    // Navigate to push-up screen
+                    // This will be handled by the navigation system
+                }
+            }
         }
     }
 }
 
 @Composable
-fun PushUpApp() {
-    val viewModel: PushUpViewModel = viewModel()
-    var showSettings by remember { mutableStateOf(false) }
+fun AppLockApp() {
+    val navController = rememberNavController()
+    val appLockViewModel: AppLockViewModel = viewModel()
     
-    // Get current orientation
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        AppNavigation(
+            navController = navController,
+            appLockViewModel = appLockViewModel
+        )
+    }
+}
+
+@Composable
+fun AppNavigation(
+    navController: NavHostController,
+    appLockViewModel: AppLockViewModel
+) {
+    val uiState by appLockViewModel.uiState.collectAsState()
+    val installedApps by appLockViewModel.installedApps.collectAsState()
+    val appLockSettings by appLockViewModel.appLockSettings.collectAsState()
+    val pushUpSettings by appLockViewModel.pushUpSettings.collectAsState()
     
-    MaterialTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            if (isLandscape) {
-                // Landscape layout - side by side
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
-                    // Left side - Camera and Controls
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Push-Up Counter",
-                            style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                        
-                        // Camera preview
-                        CameraPreview(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            viewModel = viewModel
-                        )
-                        
-                        // Control buttons
-                        ControlButtons(
-                            onStart = { viewModel.startCounting() },
-                            onStop = { viewModel.stopCounting() },
-                            onReset = { viewModel.resetCounter() },
-                            onTest = { viewModel.testCounter() },
-                            onSettings = { showSettings = !showSettings },
-                            isCounting = viewModel.isCounting,
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                    
-                    // Right side - Status and Settings
-                    Column(
-                        modifier = Modifier
-                            .weight(0.8f)
-                            .fillMaxHeight()
-                            .padding(start = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Status and counter display
-                        StatusAndCounterDisplay(
-                            pushUpCount = viewModel.pushUpCount,
-                            isCounting = viewModel.isCounting,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                        
-                        // Settings panel
-                        if (showSettings) {
-                            ThresholdSettingsPanel(
-                                viewModel = viewModel,
-                                modifier = Modifier.weight(1f)
-                            )
+    // Show error/success messages
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            // Show error message (you can implement a snackbar here)
+            appLockViewModel.clearError()
+        }
+    }
+    
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let { message ->
+            // Show success message (you can implement a snackbar here)
+            appLockViewModel.clearMessage()
+        }
+    }
+    
+    NavHost(
+        navController = navController,
+        startDestination = "dashboard"
+    ) {
+        composable("dashboard") {
+            DashboardScreen(
+                lockedApps = appLockSettings,
+                totalAppsLocked = uiState.lockedApps,
+                onUnlockApp = { app ->
+                    // Navigate to push-up screen for unlocking
+                    navController.navigate("pushup/${app.packageName}")
+                },
+                onOpenSettings = {
+                    navController.navigate("settings")
+                },
+                onStartPushUps = {
+                    navController.navigate("pushup")
+                },
+                onStartMonitoring = {
+                    appLockViewModel.startMonitoring()
+                },
+                onStopMonitoring = {
+                    appLockViewModel.stopMonitoring()
+                },
+                onViewLogs = {
+                    navController.navigate("logs")
+                },
+                isMonitoring = uiState.isMonitoring
+            )
+        }
+        
+        composable("settings") {
+            AppSelectionScreen(
+                installedApps = installedApps,
+                appLockSettings = appLockSettings,
+                onAppToggle = { app, isLocked ->
+                    appLockViewModel.toggleAppLock(app, isLocked)
+                },
+                onTimeLimitChange = { packageName, timeLimit ->
+                    appLockViewModel.updateTimeLimit(packageName, timeLimit)
+                },
+                onPushUpRequirementChange = { packageName, pushUpCount ->
+                    appLockViewModel.updatePushUpRequirement(packageName, pushUpCount)
+                },
+                onSaveSettings = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable("pushup") {
+            PushUpUnlockScreen(
+                appLockViewModel = appLockViewModel,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable("pushup/{packageName}") { backStackEntry ->
+            val packageName = backStackEntry.arguments?.getString("packageName")
+            if (packageName != null) {
+                val appSettings = appLockSettings.find { it.packageName == packageName }
+                if (appSettings != null) {
+                    PushUpUnlockScreen(
+                        appLockViewModel = appLockViewModel,
+                        targetApp = appSettings,
+                        onBack = {
+                            navController.popBackStack()
                         }
-                        
-                        // Debug panel - always visible
-                        DebugPanel(
-                            viewModel = viewModel,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            } else {
-                // Portrait layout - stacked vertically
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Push-Up Counter",
-                        style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                    
-                    // Camera preview
-                    CameraPreview(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        viewModel = viewModel
-                    )
-                    
-                    // Status and counter display
-                    StatusAndCounterDisplay(
-                        pushUpCount = viewModel.pushUpCount,
-                        isCounting = viewModel.isCounting,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    
-                    // Control buttons
-                    ControlButtons(
-                        onStart = { viewModel.startCounting() },
-                        onStop = { viewModel.stopCounting() },
-                        onReset = { viewModel.resetCounter() },
-                        onTest = { viewModel.testCounter() },
-                        onSettings = { showSettings = !showSettings },
-                        isCounting = viewModel.isCounting,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    
-                                    // Settings panel
-                if (showSettings) {
-                    ThresholdSettingsPanel(
-                        viewModel = viewModel,
-                        modifier = Modifier.padding(top = 16.dp)
                     )
                 }
-                
-                // Debug panel - always visible
-                DebugPanel(
-                    viewModel = viewModel,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun StatusAndCounterDisplay(
-    pushUpCount: Int,
-    isCounting: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Status indicator
-            Row(
-                modifier = Modifier.padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .background(
-                            color = if (isCounting) Color.Green else Color.Red,
-                            shape = androidx.compose.foundation.shape.CircleShape
-                        )
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isCounting) "Detecting..." else "Stopped",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isCounting) Color.Green else Color.Red
-                )
-            }
-            
-            // Counter
-            Text(
-                text = "Push-ups Completed",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "$pushUpCount",
-                style = MaterialTheme.typography.displayLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            // Instructions
-            if (!isCounting) {
-                Text(
-                    text = "Position yourself in front of the camera and press Start",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            } else {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Blue markers show detected body parts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Text(
-                        text = "Angles are displayed in real-time",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Text(
-                        text = "Keep your body in frame for best detection",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-            
-            // Pose detection tips
-            if (isCounting) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp)
-                    ) {
-                        Text(
-                            text = "Detection Tips:",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            text = "• Face the camera directly",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            text = "• Keep arms and shoulders visible",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            text = "• Maintain good lighting",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-
-
-@Composable
-fun ControlButtons(
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onReset: () -> Unit,
-    onTest: () -> Unit,
-    onSettings: () -> Unit,
-    isCounting: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Button(
-                onClick = if (isCounting) onStop else onStart,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isCounting) 
-                        MaterialTheme.colorScheme.error 
-                    else 
-                        MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text(if (isCounting) "Stop" else "Start")
-            }
-            
-            Button(
-                onClick = onReset,
-                enabled = !isCounting
-            ) {
-                Text("Reset")
             }
         }
         
-        // Test button for debugging
-        if (!isCounting) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onTest,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary
-                )
-            ) {
-                Text("Test Counter (Debug)")
-            }
-        }
-
-        // Settings button
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = onSettings,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.tertiary
-            )
-        ) {
-            Text("Settings")
-        }
-    }
-}
-
-@Composable
-fun ThresholdSettingsPanel(
-    viewModel: PushUpViewModel,
-    modifier: Modifier = Modifier
-) {
-    val currentThresholds = viewModel.getCurrentThresholds()
-    
-    var elbowDownThreshold by remember { mutableStateOf(currentThresholds["elbowDown"] ?: 115f) }
-    var elbowUpThreshold by remember { mutableStateOf(currentThresholds["elbowUp"] ?: 172f) }
-    var shoulderDownThreshold by remember { mutableStateOf(currentThresholds["shoulderDown"] ?: 90f) }
-    var shoulderUpThreshold by remember { mutableStateOf(currentThresholds["shoulderUp"] ?: 17f) }
-    
-    // Update local state when thresholds change
-    LaunchedEffect(currentThresholds) {
-        elbowDownThreshold = currentThresholds["elbowDown"] ?: 115f
-        elbowUpThreshold = currentThresholds["elbowUp"] ?: 172f
-        shoulderDownThreshold = currentThresholds["shoulderDown"] ?: 90f
-        shoulderUpThreshold = currentThresholds["shoulderUp"] ?: 17f
-    }
-    
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Detection Thresholds",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            
-            // Elbow Down Threshold
-            ThresholdSlider(
-                label = "Elbow Down Threshold",
-                value = elbowDownThreshold,
-                onValueChange = { 
-                    elbowDownThreshold = it
-                    viewModel.adjustElbowDownThreshold(it)
-                },
-                valueRange = 100f..130f,  // 115° range
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
-            // Elbow Up Threshold
-            ThresholdSlider(
-                label = "Elbow Up Threshold",
-                value = elbowUpThreshold,
-                onValueChange = { 
-                    elbowUpThreshold = it
-                    viewModel.adjustElbowUpThreshold(it)
-                },
-                valueRange = 160f..180f,  // 165-180° range
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
-            // Shoulder Down Threshold
-            ThresholdSlider(
-                label = "Shoulder Down Threshold",
-                value = shoulderDownThreshold,
-                onValueChange = { 
-                    shoulderDownThreshold = it
-                    viewModel.adjustShoulderDownThreshold(it)
-                },
-                valueRange = 70f..110f,  // 90° range
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
-            // Shoulder Up Threshold
-            ThresholdSlider(
-                label = "Shoulder Up Threshold",
-                value = shoulderUpThreshold,
-                onValueChange = { 
-                    shoulderUpThreshold = it
-                    viewModel.adjustShoulderUpThreshold(it)
-                },
-                valueRange = 5f..30f,  // 10-25° range
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            
-            // Reset button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(
-                    onClick = {
-                        viewModel.resetThresholds()
-                        // Reset local state to new defaults
-                        elbowDownThreshold = 115f
-                        elbowUpThreshold = 172f
-                        shoulderDownThreshold = 90f
-                        shoulderUpThreshold = 17f
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Reset to Defaults")
+        composable("logs") {
+            LogViewerScreen(
+                onBack = {
+                    navController.popBackStack()
                 }
-            }
+            )
         }
     }
 }
 
 @Composable
-fun ThresholdSlider(
-    label: String,
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    valueRange: ClosedFloatingPointRange<Float>,
-    modifier: Modifier = Modifier
+fun PushUpUnlockScreen(
+    appLockViewModel: AppLockViewModel,
+    targetApp: com.example.pushapp.data.AppLockSettings? = null,
+    onBack: () -> Unit
 ) {
-    Column(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-            Text(
-                text = "${value.toInt()}°",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-            )
+    val pushUpSettings by appLockViewModel.pushUpSettings.collectAsState()
+    val context = LocalContext.current
+    val pushUpViewModel: PushUpViewModel = viewModel()
+    
+    // Handle push-up completion
+    val onPushUpComplete = { pushUpCount: Int ->
+        if (targetApp != null) {
+            // Unlock the specific app
+            appLockViewModel.unlockAppWithPushUps(targetApp, pushUpCount)
         }
-        
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            steps = ((valueRange.endInclusive - valueRange.start) / 2).toInt() - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.3f)
-            )
-        )
+        onBack()
     }
-}
-
-@Composable
-fun DebugPanel(
-    viewModel: PushUpViewModel,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "🔍 Debug Information",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
-            // Current thresholds
-            Text(
-                text = "Current Thresholds:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-            )
-            
-            val thresholds = viewModel.getCurrentThresholds()
-            Text(
-                text = "Elbow: Down<${thresholds["elbowDown"]?.toInt()}° Up>${thresholds["elbowUp"]?.toInt()}°",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Text(
-                text = "Shoulder: Down>${thresholds["shoulderDown"]?.toInt()}° Up<${thresholds["shoulderUp"]?.toInt()}°",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Current state
-            Text(
-                text = "Current State:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-            )
-            
-            // This will be updated by the ViewModel
-            var debugInfo by remember { mutableStateOf("Waiting for pose data...") }
-            
-            // Update debug info when state changes
-            LaunchedEffect(Unit) {
-                while (true) {
-                    delay(500) // Update every 500ms
-                    val currentState = viewModel.getDebugInfo()
-                    debugInfo = currentState
-                }
-            }
-            
-            Text(
-                text = debugInfo,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Instructions
-            Text(
-                text = "💡 Check Android Studio Logcat for detailed logs",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-            )
-        }
-    }
+    
+    // Use the integration layer
+    PushUpIntegration(
+        pushUpViewModel = pushUpViewModel,
+        targetApp = targetApp,
+        onPushUpComplete = onPushUpComplete,
+        onClose = onBack,
+        modifier = Modifier.fillMaxSize()
+    )
 }

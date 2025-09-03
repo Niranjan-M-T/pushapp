@@ -19,7 +19,11 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import com.example.pushapp.PoseDetectionHelper
+import androidx.camera.core.ExperimentalGetImage
+import com.example.pushapp.utils.AppLogger
+import com.example.pushapp.PoseOverlayView
 
+@ExperimentalGetImage
 class PushUpViewModel : ViewModel() {
     
     private var cameraProvider: ProcessCameraProvider? = null
@@ -54,53 +58,102 @@ class PushUpViewModel : ViewModel() {
     private var lastElbowAngle = 0f
     private var lastShoulderAngle = 0f
     
+    // Improved push-up state tracking
+    private var pushUpState = PushUpState.IDLE
+    private var hasBeenInDownPosition = false
+    
+    enum class PushUpState {
+        IDLE,           // Starting state
+        GOING_DOWN,     // Moving from up to down
+        DOWN,           // In down position
+        GOING_UP,       // Moving from down to up
+        UP              // In up position
+    }
+    
     private val poseHelper = PoseDetectionHelper()
     
     fun initializeCamera(context: Context, lifecycleOwner: androidx.lifecycle.LifecycleOwner) {
         if (isCameraInitialized) return
         
-        this.lifecycleOwner = lifecycleOwner
-        cameraExecutor = Executors.newSingleThreadExecutor()
-        
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        cameraProviderFuture.addListener({
-            try {
-                cameraProvider = cameraProviderFuture.get()
-                isCameraInitialized = true
-                Log.d("PushUpViewModel", "Camera initialized successfully")
-            } catch (e: Exception) {
-                Log.e("PushUpViewModel", "Failed to initialize camera", e)
-            }
-        }, ContextCompat.getMainExecutor(context))
+        try {
+            AppLogger.i("PushUpViewModel", "Initializing camera...")
+            
+            this.lifecycleOwner = lifecycleOwner
+            cameraExecutor = Executors.newSingleThreadExecutor()
+            
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+            cameraProviderFuture.addListener({
+                try {
+                    cameraProvider = cameraProviderFuture.get()
+                    isCameraInitialized = true
+                    AppLogger.i("PushUpViewModel", "Camera initialized successfully")
+                } catch (e: Exception) {
+                    AppLogger.e("PushUpViewModel", "Failed to initialize camera", e)
+                    throw e
+                }
+            }, ContextCompat.getMainExecutor(context))
+            
+        } catch (e: Exception) {
+            AppLogger.e("PushUpViewModel", "Camera initialization failed", e)
+            throw e
+        }
     }
     
     fun setPreviewView(previewView: androidx.camera.view.PreviewView) {
-        this.previewView = previewView
+        try {
+            this.previewView = previewView
+            AppLogger.d("PushUpViewModel", "Preview view set successfully")
+        } catch (e: Exception) {
+            AppLogger.e("PushUpViewModel", "Failed to set preview view", e)
+            throw e
+        }
     }
     
     fun setOverlayView(overlayView: PoseOverlayView) {
-        this.overlayView = overlayView
+        try {
+            this.overlayView = overlayView
+            AppLogger.d("PushUpViewModel", "Overlay view set successfully")
+        } catch (e: Exception) {
+            AppLogger.e("PushUpViewModel", "Failed to set overlay view", e)
+            throw e
+        }
     }
     
     fun startCounting() {
-        if (!isCameraInitialized) return
+        if (!isCameraInitialized) {
+            AppLogger.w("PushUpViewModel", "Cannot start counting: camera not initialized")
+            return
+        }
         
-        isCounting = true
-        startImageAnalysis()
-        Log.d("PushUpViewModel", "Started push-up counting")
+        try {
+            isCounting = true
+            startImageAnalysis()
+            AppLogger.i("PushUpViewModel", "Started push-up counting")
+        } catch (e: Exception) {
+            AppLogger.e("PushUpViewModel", "Failed to start counting", e)
+            isCounting = false
+            throw e
+        }
     }
     
     fun stopCounting() {
-        isCounting = false
-        stopImageAnalysis()
-        Log.d("PushUpViewModel", "Stopped push-up counting")
+        try {
+            isCounting = false
+            stopImageAnalysis()
+            AppLogger.i("PushUpViewModel", "Stopped push-up counting")
+        } catch (e: Exception) {
+            AppLogger.e("PushUpViewModel", "Failed to stop counting", e)
+            throw e
+        }
     }
     
     fun resetCounter() {
         pushUpCount = 0
         isInDownPosition = false
         isInUpPosition = false
-        Log.d("PushUpViewModel", "Reset push-up counter")
+        pushUpState = PushUpState.IDLE
+        hasBeenInDownPosition = false
+        Log.d("PushUpViewModel", "Reset push-up counter and state machine")
     }
     
     fun testCounter() {
@@ -116,41 +169,59 @@ class PushUpViewModel : ViewModel() {
     }
     
     private fun startImageAnalysis() {
-        val cameraProvider = cameraProvider ?: return
-        val previewView = previewView ?: return
-        
-        // Create preview use case
-        val preview = Preview.Builder().build().also {
-            it.setSurfaceProvider(previewView.surfaceProvider)
-        }
-        
-        // Create image analysis use case
-        val imageAnalysis = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .build()
-            .also {
-                it.setAnalyzer(cameraExecutor) { imageProxy ->
-                    processImage(imageProxy)
-                }
-            }
-        
         try {
-            cameraProvider.unbindAll()
-            
-            val owner = lifecycleOwner
-            if (owner != null) {
-                camera = cameraProvider.bindToLifecycle(
-                    owner,
-                    CameraSelector.DEFAULT_FRONT_CAMERA,
-                    preview,
-                    imageAnalysis
-                )
-                this.imageAnalyzer = imageAnalysis
-                this.preview = preview
+            val cameraProvider = cameraProvider ?: run {
+                AppLogger.e("PushUpViewModel", "Camera provider is null")
+                return
+            }
+            val previewView = previewView ?: run {
+                AppLogger.e("PushUpViewModel", "Preview view is null")
+                return
             }
             
+            AppLogger.d("PushUpViewModel", "Starting image analysis...")
+            
+            // Create preview use case
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            
+            // Create image analysis use case
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also {
+                    it.setAnalyzer(cameraExecutor) { imageProxy ->
+                        processImage(imageProxy)
+                    }
+                }
+            
+            try {
+                cameraProvider.unbindAll()
+                
+                val owner = lifecycleOwner
+                if (owner != null) {
+                    camera = cameraProvider.bindToLifecycle(
+                        owner,
+                        CameraSelector.DEFAULT_FRONT_CAMERA,
+                        preview,
+                        imageAnalysis
+                    )
+                    this.imageAnalyzer = imageAnalysis
+                    this.preview = preview
+                    
+                    AppLogger.i("PushUpViewModel", "Image analysis started successfully")
+                } else {
+                    AppLogger.e("PushUpViewModel", "Lifecycle owner is null")
+                }
+                
+            } catch (e: Exception) {
+                AppLogger.e("PushUpViewModel", "Failed to bind image analysis", e)
+                throw e
+            }
         } catch (e: Exception) {
-            Log.e("PushUpViewModel", "Failed to bind image analysis", e)
+            AppLogger.e("PushUpViewModel", "Failed to start image analysis", e)
+            throw e
         }
     }
     
@@ -161,41 +232,74 @@ class PushUpViewModel : ViewModel() {
     }
     
     private fun processImage(imageProxy: ImageProxy) {
-        val mediaImage = imageProxy.image
-        if (mediaImage != null) {
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-            
-            poseDetector.process(image)
-                .addOnSuccessListener { pose ->
-                    analyzePose(pose, image.width, image.height)
-                }
-                .addOnFailureListener { e ->
-                    Log.e("PushUpViewModel", "Pose detection failed", e)
-                }
-                .addOnCompleteListener {
-                    imageProxy.close()
-                }
-        } else {
-            imageProxy.close()
+        try {
+            val mediaImage = imageProxy.image
+            if (mediaImage != null) {
+                val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                
+                AppLogger.d("PushUpViewModel", "Processing image: ${image.width}x${image.height}")
+                
+                poseDetector.process(image)
+                    .addOnSuccessListener { pose ->
+                        try {
+                            AppLogger.d("PushUpViewModel", "Pose detected with ${pose.allPoseLandmarks.size} landmarks")
+                            analyzePose(pose, image.width, image.height)
+                        } catch (e: Exception) {
+                            AppLogger.e("PushUpViewModel", "Error analyzing pose", e)
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        AppLogger.e("PushUpViewModel", "Pose detection failed", e)
+                    }
+                    .addOnCompleteListener {
+                        try {
+                            imageProxy.close()
+                        } catch (e: Exception) {
+                            AppLogger.e("PushUpViewModel", "Error closing image proxy", e)
+                        }
+                    }
+            } else {
+                AppLogger.w("PushUpViewModel", "No media image available")
+                imageProxy.close()
+            }
+        } catch (e: Exception) {
+            AppLogger.e("PushUpViewModel", "Error processing image", e)
+            try {
+                imageProxy.close()
+            } catch (closeException: Exception) {
+                Log.e("PushUpViewModel", "Error closing image proxy after exception", closeException)
+            }
         }
     }
     
     private fun analyzePose(pose: com.google.mlkit.vision.pose.Pose, imageWidth: Int, imageHeight: Int) {
-        val poseState = poseHelper.analyzePose(pose)
-        
-        // Update overlay view with pose data and angles
-        overlayView?.let { overlay ->
-            overlay.updatePose(pose, imageWidth, imageHeight)
-            overlay.updateAngles(poseState.currentElbowAngle, poseState.currentShoulderAngle)
-            overlay.updateThresholds(poseHelper.getCurrentThresholds())
-        }
-        
-        if (poseState.currentElbowAngle > 0f && poseState.currentShoulderAngle > 0f) {
-            // Use the pose state from the helper to detect push-up state changes
-            detectPushUpState(poseState)
+        try {
+            val poseState = poseHelper.analyzePose(pose)
             
-            lastElbowAngle = poseState.currentElbowAngle
-            lastShoulderAngle = poseState.currentShoulderAngle
+            // Update overlay view with pose data and angles
+            overlayView?.let { overlay ->
+                try {
+                    overlay.updatePose(pose, imageWidth, imageHeight)
+                    overlay.updateAngles(poseState.currentElbowAngle, poseState.currentShoulderAngle)
+                    overlay.updateThresholds(poseHelper.getCurrentThresholds())
+                } catch (e: Exception) {
+                    Log.e("PushUpViewModel", "Error updating overlay", e)
+                }
+            }
+            
+            if (poseState.currentElbowAngle > 0f && poseState.currentShoulderAngle > 0f) {
+                // Use the pose state from the helper to detect push-up state changes
+                try {
+                    detectPushUpState(poseState)
+                } catch (e: Exception) {
+                    Log.e("PushUpViewModel", "Error detecting push-up state", e)
+                }
+                
+                lastElbowAngle = poseState.currentElbowAngle
+                lastShoulderAngle = poseState.currentShoulderAngle
+            }
+        } catch (e: Exception) {
+            Log.e("PushUpViewModel", "Error in analyzePose", e)
         }
     }
     
@@ -236,6 +340,8 @@ class PushUpViewModel : ViewModel() {
             appendLine("  Down: $isInDownPosition")
             appendLine("  Up: $isInUpPosition")
             appendLine("  Counter: $pushUpCount")
+            appendLine("  PushUp State: $pushUpState")
+            appendLine("  Has Been Down: $hasBeenInDownPosition")
             appendLine("")
             appendLine("Current Thresholds:")
             appendLine("  Elbow Down: <${thresholds["elbowDown"]?.toInt()}°")
@@ -255,45 +361,80 @@ class PushUpViewModel : ViewModel() {
         Log.d("PushUpViewModel", "Current State - Down: $isInDownPosition, Up: $isInUpPosition")
         Log.d("PushUpViewModel", "New State - Down: ${poseState.isInDownPosition}, Up: ${poseState.isInUpPosition}")
         Log.d("PushUpViewModel", "Elbow: ${poseState.currentElbowAngle.toInt()}°, Shoulder: ${poseState.currentShoulderAngle.toInt()}°")
+        Log.d("PushUpViewModel", "Current PushUp State: $pushUpState")
         
         // Store previous state before updating
         val wasInDownPosition = isInDownPosition
         val wasInUpPosition = isInUpPosition
+        val previousPushUpState = pushUpState
         
         // Update our internal state
         isInDownPosition = poseState.isInDownPosition
         isInUpPosition = poseState.isInUpPosition
         
-        // Check if we're transitioning from down to up position (completing a push-up)
-        val shouldCountPushUp = poseState.isInUpPosition && !wasInUpPosition && wasInDownPosition
+        // State machine logic for push-up detection
+        when (pushUpState) {
+            PushUpState.IDLE -> {
+                // Starting state - wait for up position
+                if (poseState.isInUpPosition) {
+                    pushUpState = PushUpState.UP
+                    Log.d("PushUpViewModel", "🔄 State: IDLE → UP (Starting position)")
+                }
+            }
+            
+            PushUpState.UP -> {
+                // In up position - wait for down movement
+                if (poseState.isInDownPosition) {
+                    pushUpState = PushUpState.DOWN
+                    hasBeenInDownPosition = true
+                    Log.d("PushUpViewModel", "🔄 State: UP → DOWN (Going down)")
+                }
+            }
+            
+            PushUpState.DOWN -> {
+                // In down position - wait for up movement
+                if (poseState.isInUpPosition) {
+                    pushUpState = PushUpState.UP
+                    // Complete push-up cycle detected!
+                    pushUpCount++
+                    Log.d("PushUpViewModel", "🎉 PUSH-UP COMPLETED! Count: $pushUpCount")
+                    Log.d("PushUpViewModel", "Elbow: ${poseState.currentElbowAngle.toInt()}°, Shoulder: ${poseState.currentShoulderAngle.toInt()}°")
+                    
+                    // Trigger visual animation
+                    overlayView?.onPushUpCompleted(pushUpCount)
+                }
+            }
+            
+            PushUpState.GOING_DOWN -> {
+                // This state is not currently used but kept for future enhancement
+                if (poseState.isInDownPosition) {
+                    pushUpState = PushUpState.DOWN
+                    hasBeenInDownPosition = true
+                    Log.d("PushUpViewModel", "🔄 State: GOING_DOWN → DOWN")
+                }
+            }
+            
+            PushUpState.GOING_UP -> {
+                // This state is not currently used but kept for future enhancement
+                if (poseState.isInUpPosition) {
+                    pushUpState = PushUpState.UP
+                    // Complete push-up cycle detected!
+                    pushUpCount++
+                    Log.d("PushUpViewModel", "🎉 PUSH-UP COMPLETED! Count: $pushUpCount")
+                    Log.d("PushUpViewModel", "Elbow: ${poseState.currentElbowAngle.toInt()}°, Shoulder: ${poseState.currentShoulderAngle.toInt()}°")
+                    
+                    // Trigger visual animation
+                    overlayView?.onPushUpCompleted(pushUpCount)
+                }
+            }
+        }
         
         Log.d("PushUpViewModel", "=== STATE TRANSITION ANALYSIS ===")
         Log.d("PushUpViewModel", "Previous State - Down: $wasInDownPosition, Up: $wasInUpPosition")
         Log.d("PushUpViewModel", "Current State - Down: $isInDownPosition, Up: $isInUpPosition")
         Log.d("PushUpViewModel", "Pose State - Down: ${poseState.isInDownPosition}, Up: ${poseState.isInUpPosition}")
-        Log.d("PushUpViewModel", "Should Count Push-up: $shouldCountPushUp")
-        Log.d("PushUpViewModel", "Condition Breakdown:")
-        Log.d("PushUpViewModel", "  - Currently in up position: ${poseState.isInUpPosition}")
-        Log.d("PushUpViewModel", "  - Was NOT in up position: ${!wasInUpPosition}")
-        Log.d("PushUpViewModel", "  - Was in down position: $wasInDownPosition")
-        Log.d("PushUpViewModel", "  - All conditions met: ${poseState.isInUpPosition && !wasInUpPosition && wasInDownPosition}")
-        
-        if (shouldCountPushUp) {
-            // We were in down position and now we're in up position - complete push-up!
-            pushUpCount++
-            Log.d("PushUpViewModel", "🎉 PUSH-UP COMPLETED! Count: $pushUpCount")
-            Log.d("PushUpViewModel", "Elbow: ${poseState.currentElbowAngle.toInt()}°, Shoulder: ${poseState.currentShoulderAngle.toInt()}°")
-            
-            // Trigger visual animation
-            overlayView?.onPushUpCompleted(pushUpCount)
-        } else {
-            // Log why push-up wasn't counted
-            Log.d("PushUpViewModel", "❌ Push-up NOT counted:")
-            Log.d("PushUpViewModel", "  - Currently in up position: ${poseState.isInUpPosition}")
-            Log.d("PushUpViewModel", "  - Was in up position: $wasInUpPosition")
-            Log.d("PushUpViewModel", "  - Was in down position: $wasInDownPosition")
-            Log.d("PushUpViewModel", "  - Condition: ${poseState.isInUpPosition && !wasInUpPosition && wasInDownPosition}")
-        }
+        Log.d("PushUpViewModel", "PushUp State: $previousPushUpState → $pushUpState")
+        Log.d("PushUpViewModel", "Has Been Down: $hasBeenInDownPosition")
         
         // Log state changes for debugging
         if (poseState.isInDownPosition && !wasInDownPosition) {
