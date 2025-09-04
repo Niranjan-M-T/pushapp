@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pushapp.data.AppLockSettings
 import com.example.pushapp.ui.theme.*
+import com.example.pushapp.utils.PermissionChecker
+import com.example.pushapp.data.PermissionState
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun DashboardScreen(
@@ -34,6 +37,8 @@ fun DashboardScreen(
     onStartMonitoring: () -> Unit,
     onStopMonitoring: () -> Unit,
     onViewLogs: () -> Unit,
+    onViewUsageChart: () -> Unit,
+    onOpenPermissions: () -> Unit,
     isMonitoring: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -73,6 +78,13 @@ fun DashboardScreen(
         }
         
         Spacer(modifier = Modifier.height(24.dp))
+        
+        // Permission status card
+        PermissionStatusCard(
+            onOpenPermissions = onOpenPermissions
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
         
         // Quick actions
         Card(
@@ -115,6 +127,13 @@ fun DashboardScreen(
                     text = "View Logs",
                     icon = Icons.Default.Info,
                     onClick = onViewLogs,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                ActionButton(
+                    text = "Usage Chart",
+                    icon = Icons.Default.Info,
+                    onClick = onViewUsageChart,
                     modifier = Modifier.weight(1f)
                 )
                 }
@@ -340,6 +359,90 @@ private fun LockedAppCard(
                     fontWeight = FontWeight.Medium,
                     color = White
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionStatusCard(
+    onOpenPermissions: () -> Unit
+) {
+    val context = LocalContext.current
+    val permissionChecker = remember { PermissionChecker(context) }
+    var permissionState by remember { mutableStateOf<PermissionState?>(null) }
+    
+    LaunchedEffect(Unit) {
+        permissionState = permissionChecker.checkAllPermissions()
+    }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (permissionState?.allPermissionsGranted == true) 
+                PrimaryRed.copy(alpha = 0.1f) 
+            else 
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (permissionState?.allPermissionsGranted == true) 
+                    Icons.Default.CheckCircle 
+                else 
+                    Icons.Default.Warning,
+                contentDescription = null,
+                tint = if (permissionState?.allPermissionsGranted == true) 
+                    PrimaryRed 
+                else 
+                    MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(24.dp)
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = if (permissionState?.allPermissionsGranted == true) 
+                        "All Permissions Granted" 
+                    else 
+                        "Permissions Required",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = if (permissionState?.allPermissionsGranted == true) 
+                        PrimaryRed 
+                    else 
+                        MaterialTheme.colorScheme.error
+                )
+                
+                Text(
+                    text = if (permissionState?.allPermissionsGranted == true) {
+                        "App is fully functional"
+                    } else {
+                        "${permissionState?.missingRequiredCount ?: 0} required permission(s) missing"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            if (permissionState?.allPermissionsGranted != true) {
+                Button(
+                    onClick = onOpenPermissions,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Fix")
+                }
             }
         }
     }

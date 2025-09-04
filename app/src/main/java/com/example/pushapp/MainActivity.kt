@@ -29,6 +29,8 @@ import com.example.pushapp.ui.*
 import com.example.pushapp.ui.theme.PushAppTheme
 import com.example.pushapp.integration.PushUpIntegration
 import com.example.pushapp.utils.AppLogger
+import com.example.pushapp.utils.PermissionChecker
+import com.example.pushapp.data.PermissionState
 
 class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
@@ -51,52 +53,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Check and request camera permission
-        when {
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                // Permission already granted
-            }
-            else -> {
-                // Request camera permission directly
-                requestPermissionLauncher.launch(Manifest.permission.CAMERA)
-            }
-        }
-        
-        // Check usage stats permission
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            val appOps = getSystemService(APP_OPS_SERVICE) as android.app.AppOpsManager
-            val mode = appOps.checkOpNoThrow(
-                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                packageName
-            )
-            
-            if (mode != android.app.AppOpsManager.MODE_ALLOWED) {
-                // Request usage stats permission directly
-                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                requestUsageStatsPermissionLauncher.launch(intent)
-            }
-        }
-        
-        // Check foreground service permission for Android 12+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(
-                this,
-                "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
-            ) != PackageManager.PERMISSION_GRANTED) {
-                // Request the permission
-                requestPermissionLauncher.launch("android.permission.FOREGROUND_SERVICE_SPECIAL_USE")
-            }
-        }
-        
-        // Check overlay permission
-        if (!hasOverlayPermission()) {
-            requestOverlayPermission()
-        }
         
         setContent {
             PushAppTheme {
@@ -145,15 +101,37 @@ class MainActivity : ComponentActivity() {
 fun AppLockApp() {
     val navController = rememberNavController()
     val appLockViewModel: AppLockViewModel = viewModel()
+    val context = LocalContext.current
+    val permissionChecker = remember { PermissionChecker(context) }
+    var permissionState by remember { mutableStateOf<PermissionState?>(null) }
+    var showPermissionSetup by remember { mutableStateOf(false) }
+    
+    // Check permissions on app start
+    LaunchedEffect(Unit) {
+        val state = permissionChecker.checkAllPermissions()
+        permissionState = state
+        showPermissionSetup = !state.allPermissionsGranted
+    }
     
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        AppNavigation(
-            navController = navController,
-            appLockViewModel = appLockViewModel
-        )
+        if (showPermissionSetup) {
+            PermissionSetupScreen(
+                onPermissionsGranted = {
+                    showPermissionSetup = false
+                },
+                onSkip = {
+                    showPermissionSetup = false
+                }
+            )
+        } else {
+            AppNavigation(
+                navController = navController,
+                appLockViewModel = appLockViewModel
+            )
+        }
     }
 }
 
@@ -209,6 +187,12 @@ fun AppNavigation(
                 onViewLogs = {
                     navController.navigate("logs")
                 },
+                onViewUsageChart = {
+                    navController.navigate("usage-chart")
+                },
+                onOpenPermissions = {
+                    navController.navigate("permissions")
+                },
                 isMonitoring = uiState.isMonitoring
             )
         }
@@ -260,6 +244,25 @@ fun AppNavigation(
         composable("logs") {
             LogViewerScreen(
                 onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable("usage-chart") {
+            UsageChartScreen(
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable("permissions") {
+            PermissionSetupScreen(
+                onPermissionsGranted = {
+                    navController.popBackStack()
+                },
+                onSkip = {
                     navController.popBackStack()
                 }
             )

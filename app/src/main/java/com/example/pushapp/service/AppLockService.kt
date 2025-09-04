@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import androidx.core.app.NotificationCompat
 import com.example.pushapp.MainActivity
@@ -111,16 +112,9 @@ class AppLockService : Service() {
             AppLogger.i("AppLockService", "Usage stats permission granted, proceeding with monitoring")
             
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val endTime = System.currentTimeMillis()
-            val startTime = endTime - (24 * 60 * 60 * 1000) // Last 24 hours
             
-            val usageStats = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
-            } else {
-                emptyList()
-            }
-            
-            AppLogger.d("AppLockService", "Retrieved ${usageStats.size} usage stats entries")
+            // Get today's usage stats using the helper function
+            val usageStats = getTodaysUsageStats(usageStatsManager)
             
             // Get actual app lock settings from database using Flow
             val appLockSettings = try {
@@ -137,19 +131,36 @@ class AppLockService : Service() {
                 return
             }
             
+                        // Process each app lock setting
             for (setting in appLockSettings) {
                 if (setting.isLocked) {
                     AppLogger.d("AppLockService", "Skipping already locked app: ${setting.appName}")
                     continue
                 }
                 
+                // Find usage stats for this app
                 val appUsage = usageStats.find { it.packageName == setting.packageName }
-                val timeUsedMinutes = (appUsage?.totalTimeInForeground ?: 0) / (1000 * 60)
+                val timeUsedMinutes = if (appUsage != null) {
+                    (appUsage.totalTimeInForeground / (1000 * 60)).toInt()
+                } else {
+                    0
+                }
                 
-                AppLogger.d("AppLockService", "App: ${setting.appName}, Time used: ${timeUsedMinutes}min, Limit: ${setting.dailyTimeLimit}min")
+                AppLogger.d("AppLockService", "App: ${setting.appName} (${setting.packageName})")
+                AppLogger.d("AppLockService", "  - Time used today: ${timeUsedMinutes}min")
+                AppLogger.d("AppLockService", "  - Raw time in ms: ${appUsage?.totalTimeInForeground ?: 0}")
+                AppLogger.d("AppLockService", "  - Daily limit: ${setting.dailyTimeLimit}min")
+                AppLogger.d("AppLockService", "  - Last used: ${if (appUsage != null) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(appUsage.lastTimeUsed)) else "Never"}")
+                AppLogger.d("AppLockService", "  - App usage found: ${appUsage != null}")
                 
-                // Update time used today
-                val updatedSetting = setting.copy(timeUsedToday = timeUsedMinutes.toInt())
+                // Debug: Check if the package name matches exactly
+                val matchingStats = usageStats.filter { it.packageName.contains(setting.packageName.substringAfterLast(".")) }
+                if (matchingStats.isNotEmpty()) {
+                    AppLogger.d("AppLockService", "  - Found similar packages: ${matchingStats.map { it.packageName }}")
+                }
+                
+                // Update time used today in database
+                val updatedSetting = setting.copy(timeUsedToday = timeUsedMinutes)
                 try {
                     database.appLockDao().updateAppLockSettings(updatedSetting)
                     AppLogger.d("AppLockService", "Updated time used for ${setting.appName}: ${timeUsedMinutes}min")
@@ -157,21 +168,26 @@ class AppLockService : Service() {
                     AppLogger.e("AppLockService", "Failed to update time used for ${setting.appName}", e)
                 }
                 
+                // Check if app exceeded time limit
                 if (timeUsedMinutes > setting.dailyTimeLimit && setting.dailyTimeLimit > 0) {
+                    AppLogger.w("AppLockService", "App exceeded time limit: ${setting.appName} (${timeUsedMinutes}min > ${setting.dailyTimeLimit}min)")
+                    
                     // App exceeded time limit, lock it immediately
                     val lockedSetting = updatedSetting.copy(isLocked = true)
                     try {
                         database.appLockDao().updateAppLockSettings(lockedSetting)
                         AppLogger.i("AppLockService", "App locked: ${setting.appName} (${timeUsedMinutes}min > ${setting.dailyTimeLimit}min)")
                         
-                                            // Show overlay to lock the app
-                    showAppLockedOverlay(setting.appName, setting.packageName, timeUsedMinutes.toInt(), setting.dailyTimeLimit, setting.pushUpRequirement)
-                    
-                    // Also show notification
-                    showAppLockedNotification(setting.appName, setting.packageName)
+                        // Show overlay to lock the app
+                        showAppLockedOverlay(setting.appName, setting.packageName, timeUsedMinutes, setting.dailyTimeLimit, setting.pushUpRequirement)
+                        
+                        // Also show notification
+                        showAppLockedNotification(setting.appName, setting.packageName)
                     } catch (e: Exception) {
                         AppLogger.e("AppLockService", "Failed to lock app ${setting.appName}", e)
                     }
+                } else {
+                    AppLogger.d("AppLockService", "App within time limit: ${setting.appName} (${timeUsedMinutes}min <= ${setting.dailyTimeLimit}min)")
                 }
             }
             
@@ -275,6 +291,114 @@ class AppLockService : Service() {
         notificationManager.notify(NOTIFICATION_ID + 2, notification)
         
         AppLogger.w("AppLockService", "Permission required notification sent")
+    }
+    
+    /**
+     * Helper function to get usage stats for a specific time range
+     * Following the documented UsageStatsManager approach
+     */
+    private fun getUsageStatsForTimeRange(
+        usageStatsManager: UsageStatsManager,
+        startTime: Long,
+        endTime: Long
+    ): List<UsageStats> {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                // Try multiple intervals to get more comprehensive data
+                val allStats = mutableListOf<UsageStats>()
+                
+                // First try INTERVAL_BEST for the most accurate data
+                val bestStats = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_BEST,
+                    startTime,
+                    endTime
+                )
+                bestStats?.let { allStats.addAll(it) }
+                
+                // Also try INTERVAL_DAILY as fallback
+                val dailyStats = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY,
+                    startTime,
+                    endTime
+                )
+                dailyStats?.let { allStats.addAll(it) }
+                
+                // Merge and deduplicate stats by package name, keeping the one with highest usage
+                val mergedStats = allStats.groupBy { it.packageName }
+                    .mapValues { (_, stats) ->
+                        stats.maxByOrNull { it.totalTimeInForeground } ?: stats.first()
+                    }
+                    .values
+                    .toList()
+                
+                AppLogger.d("AppLockService", "Retrieved ${mergedStats.size} usage stats entries (merged from ${allStats.size} total)")
+                
+                // Log some sample data for debugging
+                mergedStats.take(5).forEach { stat ->
+                    AppLogger.d("AppLockService", "Sample usage: ${stat.packageName} - ${stat.totalTimeInForeground}ms")
+                }
+                
+                mergedStats
+            } else {
+                AppLogger.w("AppLockService", "UsageStatsManager not available on this Android version")
+                emptyList()
+            }
+        } catch (e: Exception) {
+            AppLogger.e("AppLockService", "Failed to query usage stats", e)
+            emptyList()
+        }
+    }
+    
+    /**
+     * Helper function to get today's usage stats
+     */
+    private fun getTodaysUsageStats(usageStatsManager: UsageStatsManager): List<UsageStats> {
+        val calendar = Calendar.getInstance()
+        val endTime = calendar.timeInMillis
+        
+        // Set start time to beginning of today (midnight)
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+        
+        AppLogger.d("AppLockService", "Getting today's usage stats from ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(startTime))} to ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(endTime))}")
+        
+        // Also try getting stats from the last 24 hours to catch any edge cases
+        val last24HoursStart = endTime - (24 * 60 * 60 * 1000) // 24 hours ago
+        val stats24h = getUsageStatsForTimeRange(usageStatsManager, last24HoursStart, endTime)
+        val statsToday = getUsageStatsForTimeRange(usageStatsManager, startTime, endTime)
+        
+        // Merge both results, preferring today's data but falling back to 24h data
+        val allStats = mutableListOf<UsageStats>()
+        allStats.addAll(statsToday)
+        allStats.addAll(stats24h)
+        
+        // Deduplicate by package name, keeping the one with highest usage
+        val mergedStats = allStats.groupBy { it.packageName }
+            .mapValues { (_, stats) ->
+                stats.maxByOrNull { it.totalTimeInForeground } ?: stats.first()
+            }
+            .values
+            .toList()
+        
+        AppLogger.d("AppLockService", "Final merged stats: ${mergedStats.size} entries")
+        return mergedStats
+    }
+    
+    /**
+     * Get usage stats for a specific app package
+     */
+    private fun getAppUsageStats(packageName: String): UsageStats? {
+        return try {
+            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val usageStats = getTodaysUsageStats(usageStatsManager)
+            usageStats.find { it.packageName == packageName }
+        } catch (e: Exception) {
+            AppLogger.e("AppLockService", "Failed to get usage stats for $packageName", e)
+            null
+        }
     }
     
     private fun createNotification(): Notification {

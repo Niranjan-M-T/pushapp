@@ -14,11 +14,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 import com.example.pushapp.utils.AppLogger
+import com.example.pushapp.utils.LogExporter
 import com.example.pushapp.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,9 +30,13 @@ fun LogViewerScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val logExporter = remember { LogExporter(context) }
     var selectedLevel by remember { mutableStateOf<AppLogger.Level?>(null) }
     var selectedTag by remember { mutableStateOf<String?>(null) }
     var logs by remember { mutableStateOf("") }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showCopySuccess by remember { mutableStateOf(false) }
     
     // Get available tags from logs
     val availableTags = remember {
@@ -58,6 +65,14 @@ fun LogViewerScreen(
                 }
             },
             actions = {
+                IconButton(
+                    onClick = {
+                        showExportDialog = true
+                    }
+                ) {
+                    Icon(Icons.Default.Share, "Export Logs")
+                }
+                
                 IconButton(
                     onClick = {
                         AppLogger.clearLogs()
@@ -241,4 +256,118 @@ fun LogViewerScreen(
             }
         }
     }
+    
+    // Export Dialog
+    if (showExportDialog) {
+        ExportLogsDialog(
+            onDismiss = { showExportDialog = false },
+            onCopyToClipboard = {
+                val success = logExporter.copyLogsToClipboard(logs)
+                showCopySuccess = success
+                showExportDialog = false
+            },
+            onShareLogs = {
+                val shareIntent = logExporter.shareLogs(logs)
+                context.startActivity(Intent.createChooser(shareIntent, "Share Logs"))
+                showExportDialog = false
+            },
+            onExportToFile = {
+                val uri = logExporter.exportLogsToFile(logs)
+                if (uri != null) {
+                    val shareIntent = logExporter.shareLogs(logs)
+                    context.startActivity(Intent.createChooser(shareIntent, "Save Logs"))
+                }
+                showExportDialog = false
+            }
+        )
+    }
+    
+    // Copy Success Snackbar
+    if (showCopySuccess) {
+        LaunchedEffect(showCopySuccess) {
+            kotlinx.coroutines.delay(2000)
+            showCopySuccess = false
+        }
+        
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Card(
+                modifier = Modifier.padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF4CAF50))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Logs copied to clipboard!",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportLogsDialog(
+    onDismiss: () -> Unit,
+    onCopyToClipboard: () -> Unit,
+    onShareLogs: () -> Unit,
+    onExportToFile: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Export Logs")
+        },
+        text = {
+            Text("Choose how you want to export the logs:")
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onCopyToClipboard
+                ) {
+                    Icon(Icons.Default.Copy, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Copy")
+                }
+                
+
+            
+                OutlinedButton(
+                    onClick = onShareLogs
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Share")
+                }
+                
+                Button(
+                    onClick = onExportToFile
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Save")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

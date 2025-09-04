@@ -80,6 +80,12 @@ dependencies {
     implementation(libs.mlkit.pose.accurate) // This is com.google.mlkit:pose-detection-accurate:17.1.3
     implementation("com.google.mlkit:vision-common:17.3.0")
     
+    // Charts for usage visualization
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+    
+    // File operations for log export
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
