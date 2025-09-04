@@ -93,6 +93,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         
+        // Check overlay permission
+        if (!hasOverlayPermission()) {
+            requestOverlayPermission()
+        }
+        
         setContent {
             PushAppTheme {
                 AppLockApp()
@@ -114,6 +119,24 @@ class MainActivity : ComponentActivity() {
                     // This will be handled by the navigation system
                 }
             }
+        }
+    }
+    
+    private fun hasOverlayPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+    
+    private fun requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
         }
     }
 }

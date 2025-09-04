@@ -53,6 +53,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync|specialUse" />
             
+        <!-- App Lock Overlay Service -->
+        <service
+            android:name=".service.AppLockOverlayService"
+            android:enabled="true"
+            android:exported="false" />
+            
     </application>
 
 </manifest>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#80000000"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <!-- App Lock Icon -->
+    <ImageView
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:src="@drawable/ic_launcher_foreground"
+        android:tint="#FF4444"
+        android:layout_marginBottom="24dp" />
+
+    <!-- App Name -->
+    <TextView
+        android:id="@+id/tvAppName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="App Name"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="16dp"
+        android:gravity="center" />
+
+    <!-- Time Information -->
+    <TextView
+        android:id="@+id/tvTimeInfo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Time used: 0min / 0min"
+        android:textSize="18sp"
+        android:textColor="#FFCCCC"
+        android:layout_marginBottom="16dp"
+        android:gravity="center" />
+
+    <!-- Push-up Requirement -->
+    <TextView
+        android:id="@+id/tvPushUpRequirement"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Complete 0 push-ups to unlock"
+        android:textSize="20sp"
+        android:textColor="#FF6666"
+        android:layout_marginBottom="32dp"
+        android:gravity="center" />
+
+    <!-- Unlock Button -->
+    <Button
+        android:id="@+id/btnUnlock"
+        android:layout_width="200dp"
+        android:layout_height="56dp"
+        android:text="Start Push-ups"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:background="@drawable/button_primary"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Close Button (for testing) -->
+    <Button
+        android:id="@+id/btnClose"
+        android:layout_width="120dp"
+        android:layout_height="48dp"
+        android:text="Close"
+        android:textSize="16sp"
+        android:background="@drawable/button_secondary"
+        android:textColor="#FFFFFF" />
+
+    <!-- Warning Text -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚠️ This app is locked due to time limit exceeded"
+        android:textSize="14sp"
+        android:textColor="#FFAAAA"
+        android:layout_marginTop="32dp"
+        android:gravity="center" />
+
+</LinearLayout>

@@ -164,8 +164,11 @@ class AppLockService : Service() {
                         database.appLockDao().updateAppLockSettings(lockedSetting)
                         AppLogger.i("AppLockService", "App locked: ${setting.appName} (${timeUsedMinutes}min > ${setting.dailyTimeLimit}min)")
                         
-                        // Show notification with dialog
-                        showAppLockedNotification(setting.appName, setting.packageName)
+                                            // Show overlay to lock the app
+                    showAppLockedOverlay(setting.appName, setting.packageName, timeUsedMinutes.toInt(), setting.dailyTimeLimit, setting.pushUpRequirement)
+                    
+                    // Also show notification
+                    showAppLockedNotification(setting.appName, setting.packageName)
                     } catch (e: Exception) {
                         AppLogger.e("AppLockService", "Failed to lock app ${setting.appName}", e)
                     }
@@ -220,6 +223,31 @@ class AppLockService : Service() {
         notificationManager.notify(NOTIFICATION_ID + 1, notification)
         
         AppLogger.i("AppLockService", "Notification sent for locked app: $appName")
+    }
+    
+    private fun showAppLockedOverlay(
+        appName: String,
+        packageName: String,
+        timeUsed: Int,
+        timeLimit: Int,
+        pushUpRequirement: Int
+    ) {
+        try {
+            val intent = Intent(this, com.example.pushapp.service.AppLockOverlayService::class.java).apply {
+                action = com.example.pushapp.service.AppLockOverlayService.ACTION_SHOW_OVERLAY
+                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_PACKAGE_NAME, packageName)
+                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_APP_NAME, appName)
+                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_TIME_USED, timeUsed)
+                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_TIME_LIMIT, timeLimit)
+                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_PUSH_UP_REQUIREMENT, pushUpRequirement)
+            }
+            
+            startService(intent)
+            AppLogger.i("AppLockService", "Overlay service started for locked app: $appName")
+            
+        } catch (e: Exception) {
+            AppLogger.e("AppLockService", "Failed to start overlay service for $appName", e)
+        }
     }
     
     private fun showPermissionRequiredNotification() {
