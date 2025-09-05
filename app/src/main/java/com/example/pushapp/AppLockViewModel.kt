@@ -70,12 +70,17 @@ class AppLockViewModel(application: Application) : AndroidViewModel(application)
             // Start monitoring automatically if not already running
             if (!_isMonitoring.value) {
                 try {
+                    AppLogger.i("AppLockViewModel", "Service not running, attempting to start...")
                     appLockManager.startMonitoring()
                     _isMonitoring.value = true
-                    AppLogger.i("AppLockViewModel", "Auto-started monitoring service")
+                    AppLogger.i("AppLockViewModel", "✅ Auto-started monitoring service")
                 } catch (e: Exception) {
-                    AppLogger.e("AppLockViewModel", "Failed to auto-start monitoring", e)
+                    AppLogger.e("AppLockViewModel", "❌ Failed to auto-start monitoring", e)
+                    AppLogger.e("AppLockViewModel", "Error type: ${e.javaClass.simpleName}")
+                    AppLogger.e("AppLockViewModel", "Error message: ${e.message}")
                 }
+            } else {
+                AppLogger.i("AppLockViewModel", "✅ Service already running, no need to start")
             }
             
         } catch (e: Exception) {

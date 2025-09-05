@@ -37,6 +37,8 @@ class AppLockOverlayService : Service() {
     private val lockedApps = mutableSetOf<String>()
     private val handler = Handler(Looper.getMainLooper())
     private var foregroundCheckRunnable: Runnable? = null
+    private val lastOverlayAction = mutableMapOf<String, Long>()
+    private val OVERLAY_DEBOUNCE_TIME = 1000L // 1 second debounce
     
     companion object {
         private const val TAG = "AppLockOverlayService"
@@ -108,11 +110,6 @@ class AppLockOverlayService : Service() {
                 hideAllOverlays()
                 lockedApps.clear()
             }
-            ACTION_TEST_OVERLAY -> {
-                AppLogger.i(TAG, "Test overlay requested")
-                showOverlay("com.instagram.android", "Instagram", 65, 60, 10)
-                lockedApps.add("com.instagram.android")
-            }
             else -> {
                 AppLogger.w(TAG, "Unknown action: ${intent?.action}")
             }
@@ -157,7 +154,10 @@ class AppLockOverlayService : Service() {
             AppLogger.i(TAG, "Overlay permission granted, proceeding to show overlay")
             
             // Remove existing overlay for this package if it exists
-            hideOverlay(packageName)
+            if (overlayViews.containsKey(packageName)) {
+                AppLogger.i(TAG, "Overlay already exists for $packageName, removing it first")
+                hideOverlay(packageName)
+            }
             
             AppLogger.i(TAG, "Showing overlay for $appName ($packageName)")
             
@@ -184,8 +184,9 @@ class AppLockOverlayService : Service() {
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                         WindowManager.LayoutParams.FLAG_FULLSCREEN or
                         WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-                format = PixelFormat.TRANSLUCENT
+                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                format = PixelFormat.OPAQUE
                 gravity = Gravity.TOP or Gravity.START
                 x = 0
                 y = 0
@@ -193,18 +194,39 @@ class AppLockOverlayService : Service() {
             
             // Add the overlay to the window manager
             try {
+                AppLogger.i(TAG, "=== OVERLAY CREATION DEBUG ===")
+                AppLogger.i(TAG, "Package: $packageName")
+                AppLogger.i(TAG, "App Name: $appName")
+                AppLogger.i(TAG, "WindowManager: $windowManager")
+                AppLogger.i(TAG, "Overlay View: $overlayView")
+                AppLogger.i(TAG, "Params: width=${params.width}, height=${params.height}")
+                AppLogger.i(TAG, "Params: type=${params.type}, flags=${params.flags}")
+                AppLogger.i(TAG, "Params: format=${params.format}, gravity=${params.gravity}")
+                
                 windowManager.addView(overlayView, params)
-                AppLogger.i(TAG, "Successfully added overlay view to WindowManager")
+                AppLogger.i(TAG, "✅ Successfully added overlay view to WindowManager")
                 
                 // Store the overlay view for later removal
                 overlayViews[packageName] = overlayView
                 lockedApps.add(packageName)
                 
-                AppLogger.i(TAG, "Overlay displayed successfully for $appName")
+                AppLogger.i(TAG, "✅ Overlay displayed successfully for $appName")
+                AppLogger.i(TAG, "Current overlay views: ${overlayViews.keys}")
+                AppLogger.i(TAG, "Current locked apps: $lockedApps")
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Failed to add overlay view to WindowManager", e)
-                AppLogger.e(TAG, "Error details: ${e.message}")
+                AppLogger.e(TAG, "❌ FAILED to add overlay view to WindowManager", e)
+                AppLogger.e(TAG, "Error type: ${e.javaClass.simpleName}")
+                AppLogger.e(TAG, "Error message: ${e.message}")
+                AppLogger.e(TAG, "Error stack trace: ${e.stackTrace.joinToString("\n")}")
                 AppLogger.e(TAG, "WindowManager params: width=${params.width}, height=${params.height}, type=${params.type}, flags=${params.flags}")
+                
+                // Try to get more specific error information
+                when (e) {
+                    is SecurityException -> AppLogger.e(TAG, "SECURITY EXCEPTION: Overlay permission issue")
+                    is IllegalArgumentException -> AppLogger.e(TAG, "ILLEGAL ARGUMENT: WindowManager parameters issue")
+                    is WindowManager.BadTokenException -> AppLogger.e(TAG, "BAD TOKEN: WindowManager token issue")
+                    else -> AppLogger.e(TAG, "UNKNOWN ERROR: ${e.javaClass.simpleName}")
+                }
             }
             
         } catch (e: Exception) {
@@ -247,11 +269,7 @@ class AppLockOverlayService : Service() {
             startActivity(intent)
         }
         
-        // Set up close button (for testing purposes)
-        overlayView.findViewById<Button>(R.id.btnClose).setOnClickListener {
-            AppLogger.i(TAG, "Close button clicked for $appName")
-            hideOverlay(packageName)
-        }
+        // Close button removed - overlay cannot be dismissed by user
     }
     
     private fun hideOverlay(packageName: String) {
@@ -260,11 +278,27 @@ class AppLockOverlayService : Service() {
             if (overlayView != null) {
                 windowManager.removeView(overlayView)
                 overlayViews.remove(packageName)
-                lockedApps.remove(packageName)
-                AppLogger.i(TAG, "Overlay hidden for package: $packageName")
+                // DON'T remove from lockedApps - keep the app locked!
+                // lockedApps.remove(packageName)  // ← REMOVED THIS LINE
+                AppLogger.i(TAG, "Overlay hidden for package: $packageName (app remains locked)")
+                AppLogger.i(TAG, "Current locked apps: $lockedApps")
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "Failed to hide overlay for package: $packageName", e)
+        }
+    }
+    
+    private fun hideOverlayTemporarily(packageName: String) {
+        try {
+            val overlayView = overlayViews[packageName]
+            if (overlayView != null) {
+                windowManager.removeView(overlayView)
+                overlayViews.remove(packageName)
+                // DON'T remove from lockedApps - this is just temporary hiding
+                AppLogger.i(TAG, "Overlay temporarily hidden for package: $packageName (app remains locked)")
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed to temporarily hide overlay for package: $packageName", e)
         }
     }
     
@@ -319,48 +353,63 @@ class AppLockOverlayService : Service() {
                 time
             )
             
+            AppLogger.i(TAG, "=== FOREGROUND APP CHECK ===")
+            AppLogger.i(TAG, "Stats count: ${stats.size}")
+            AppLogger.i(TAG, "Locked apps: $lockedApps")
+            AppLogger.i(TAG, "Overlay views: ${overlayViews.keys}")
+            
             if (stats.isNotEmpty()) {
-                val foregroundApp = stats.maxByOrNull { it.lastTimeUsed }?.packageName
-                AppLogger.d(TAG, "Foreground app detected: $foregroundApp")
-                AppLogger.d(TAG, "Currently locked apps: $lockedApps")
+                // Filter out our own app from foreground detection
+                val filteredStats = stats.filter { it.packageName != "com.example.pushapp" }
                 
-                // Check if this app is in our locked apps list
-                if (foregroundApp != null && lockedApps.contains(foregroundApp)) {
-                    // Show overlay for locked app that's in foreground
+                // Use the app with the most recent lastTimeUsed as foreground app
+                val foregroundApp = filteredStats.maxByOrNull { it.lastTimeUsed }?.packageName
+                AppLogger.i(TAG, "Foreground app detected: $foregroundApp")
+                
+                // Log all recent apps for debugging
+                filteredStats.sortedByDescending { it.lastTimeUsed }.take(5).forEach { stat ->
+                    AppLogger.d(TAG, "App: ${stat.packageName}, Last used: ${stat.lastTimeUsed}")
+                }
+                
+                // First, hide all overlays for apps that are NOT in foreground
+                val appsToHide = overlayViews.keys.filter { it != foregroundApp }
+                appsToHide.forEach { packageName ->
+                    val currentTime = System.currentTimeMillis()
+                    val lastActionTime = lastOverlayAction[packageName] ?: 0
+                    
+                    if (currentTime - lastActionTime > OVERLAY_DEBOUNCE_TIME) {
+                        AppLogger.i(TAG, "Hiding overlay for $packageName (not in foreground)")
+                        hideOverlayTemporarily(packageName)
+                        lastOverlayAction[packageName] = currentTime
+                    } else {
+                        AppLogger.d(TAG, "Debouncing overlay hide for $packageName")
+                    }
+                }
+                
+                // Then, show overlay only for the foreground app if it's locked
+                // Never show overlay in our own app
+                if (foregroundApp != null && foregroundApp != "com.example.pushapp" && lockedApps.contains(foregroundApp)) {
                     if (!overlayViews.containsKey(foregroundApp)) {
-                        AppLogger.i(TAG, "Locked app $foregroundApp is in foreground, showing overlay")
-                        showOverlayForLockedApp(foregroundApp)
+                        val currentTime = System.currentTimeMillis()
+                        val lastActionTime = lastOverlayAction[foregroundApp] ?: 0
+                        
+                        if (currentTime - lastActionTime > OVERLAY_DEBOUNCE_TIME) {
+                            AppLogger.i(TAG, "Locked app $foregroundApp is in foreground, showing overlay")
+                            showOverlayForLockedApp(foregroundApp)
+                            lastOverlayAction[foregroundApp] = currentTime
+                        } else {
+                            AppLogger.d(TAG, "Debouncing overlay creation for $foregroundApp")
+                        }
+                    } else {
+                        AppLogger.d(TAG, "Overlay already exists for $foregroundApp")
                     }
                 } else {
-                                    // Special handling for Instagram - be more aggressive
-                if (foregroundApp == "com.instagram.android") {
-                    AppLogger.i(TAG, "Instagram detected in foreground!")
-                    AppLogger.i(TAG, "Locked apps: $lockedApps")
-                    AppLogger.i(TAG, "Instagram in locked apps: ${lockedApps.contains("com.instagram.android")}")
-                    AppLogger.i(TAG, "Overlay already shown: ${overlayViews.containsKey("com.instagram.android")}")
-                    
-                    if (lockedApps.contains("com.instagram.android") && !overlayViews.containsKey("com.instagram.android")) {
-                        AppLogger.i(TAG, "Instagram detected in foreground, showing blocking overlay")
-                        showOverlayForLockedApp("com.instagram.android")
-                    } else if (!lockedApps.contains("com.instagram.android")) {
-                        AppLogger.w(TAG, "Instagram detected but not in locked apps list - adding it")
-                        lockedApps.add("com.instagram.android")
-                        showOverlayForLockedApp("com.instagram.android")
-                    }
+                    AppLogger.d(TAG, "Foreground app $foregroundApp is not locked or not in locked apps list")
                 }
-                    
-                    // Also check for partial matches (in case package name is different)
-                    if (foregroundApp != null) {
-                        val matchedApp = lockedApps.find { lockedApp ->
-                            foregroundApp.contains(lockedApp.substringAfterLast(".")) ||
-                            lockedApp.contains(foregroundApp.substringAfterLast("."))
-                        }
-                        if (matchedApp != null && !overlayViews.containsKey(matchedApp)) {
-                            AppLogger.i(TAG, "Found partial match: $matchedApp for foreground app: $foregroundApp")
-                            showOverlayForLockedApp(matchedApp)
-                        }
-                    }
-                }
+            } else {
+                // No stats available, hide all overlays
+                AppLogger.d(TAG, "No usage stats available, hiding all overlays")
+                hideAllOverlays()
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "Error checking foreground app", e)
@@ -368,6 +417,12 @@ class AppLockOverlayService : Service() {
     }
     
     private fun showOverlayForLockedApp(packageName: String) {
+        // Never show overlay in our own app
+        if (packageName == "com.example.pushapp") {
+            AppLogger.w(TAG, "Attempted to show overlay in PushApp - blocked")
+            return
+        }
+        
         // This is a simplified version - in a real implementation, you'd get the app details from database
         val appName = packageName.substringAfterLast(".")
         AppLogger.i(TAG, "Showing blocking overlay for locked app: $appName ($packageName)")

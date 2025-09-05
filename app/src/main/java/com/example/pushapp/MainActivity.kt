@@ -81,6 +81,46 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        AppLogger.i("MainActivity", "=== MainActivity onCreate started ===")
+        android.util.Log.i("MainActivity", "=== MainActivity onCreate started ===")
+        
+        // Force restart the AppLockService to ensure new code is loaded
+        try {
+            AppLogger.i("MainActivity", "Attempting to restart AppLockService...")
+            
+            // Stop the service first to ensure clean restart
+            val stopIntent = Intent(this, com.example.pushapp.service.AppLockService::class.java)
+            stopIntent.action = "STOP_MONITORING"
+            val stopResult = stopService(stopIntent)
+            AppLogger.i("MainActivity", "Stop service result: $stopResult")
+            
+            // Start the service with new code
+            val startIntent = Intent(this, com.example.pushapp.service.AppLockService::class.java)
+            startIntent.action = "START_MONITORING"
+            val startResult = startService(startIntent)
+            AppLogger.i("MainActivity", "Start service result: $startResult")
+            AppLogger.i("MainActivity", "AppLockService restart completed successfully")
+            
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "Failed to restart AppLockService", e)
+            android.util.Log.e("MainActivity", "Failed to restart AppLockService", e)
+            
+            // Fallback: try to start service normally
+            try {
+                val fallbackIntent = Intent(this, com.example.pushapp.service.AppLockService::class.java)
+                fallbackIntent.action = "START_MONITORING"
+                startService(fallbackIntent)
+                AppLogger.i("MainActivity", "Fallback service start attempted")
+                android.util.Log.i("MainActivity", "Fallback service start attempted")
+            } catch (fallbackException: Exception) {
+                AppLogger.e("MainActivity", "Fallback service start also failed", fallbackException)
+                android.util.Log.e("MainActivity", "Fallback service start also failed", fallbackException)
+            }
+        }
+        
+        AppLogger.i("MainActivity", "=== MainActivity onCreate completed ===")
+        android.util.Log.i("MainActivity", "=== MainActivity onCreate completed ===")
+        
         setContent {
             PushAppTheme {
                 AppLockApp()

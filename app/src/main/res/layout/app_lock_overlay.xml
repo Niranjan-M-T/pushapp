@@ -61,15 +61,7 @@
         android:textColor="#FFFFFF"
         android:layout_marginBottom="16dp" />
 
-    <!-- Close Button (for testing) -->
-    <Button
-        android:id="@+id/btnClose"
-        android:layout_width="120dp"
-        android:layout_height="48dp"
-        android:text="Close"
-        android:textSize="16sp"
-        android:background="@drawable/button_secondary"
-        android:textColor="#FFFFFF" />
+    <!-- Close button removed - overlay cannot be dismissed by user -->
 
     <!-- Warning Text -->
     <TextView

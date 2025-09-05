@@ -52,13 +52,10 @@ class AppLockService : Service() {
                 stopMonitoring()
                 AppLogger.i("AppLockService", "Stop monitoring command received")
             }
-            "CHECK_INSTAGRAM_USAGE" -> {
-                AppLogger.i("AppLockService", "Manual Instagram usage check requested")
-                checkInstagramUsageManually()
-            }
-            "FORCE_LOCK_INSTAGRAM" -> {
-                AppLogger.i("AppLockService", "Force lock Instagram requested")
-                forceLockInstagram()
+            null -> {
+                // Default action - start monitoring if no specific action provided
+                AppLogger.i("AppLockService", "No action provided, starting monitoring by default")
+                startMonitoring()
             }
         }
         return START_STICKY
@@ -67,30 +64,48 @@ class AppLockService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     
     private fun startMonitoring() {
-        if (isMonitoring) return
+        if (isMonitoring) {
+            AppLogger.w("AppLockService", "⚠️ Monitoring already started, skipping")
+            return
+        }
         isMonitoring = true
         
         try {
+            AppLogger.i("AppLockService", "=== SERVICE STARTUP DEBUG ===")
+            AppLogger.i("AppLockService", "Starting monitoring...")
+            
             // Start foreground service with proper error handling
             startForeground(NOTIFICATION_ID, createNotification())
+            AppLogger.i("AppLockService", "✅ Started foreground service")
             
             // Start the overlay service to monitor foreground apps
             val overlayIntent = Intent(this, com.example.pushapp.service.AppLockOverlayService::class.java)
-            startService(overlayIntent)
-            AppLogger.i("AppLockService", "Started overlay service")
+            AppLogger.i("AppLockService", "Starting overlay service with intent: $overlayIntent")
             
+            val overlayServiceResult = startService(overlayIntent)
+            AppLogger.i("AppLockService", "✅ Started overlay service, result: $overlayServiceResult")
             
             // Auto-lock Instagram for testing
             serviceScope.launch {
+                AppLogger.i("AppLockService", "Launching Instagram setup coroutine")
                 autoLockInstagramForTesting()
             }
             
+            // Check for already locked apps and notify overlay service
             serviceScope.launch {
+                AppLogger.i("AppLockService", "Launching locked apps check coroutine")
+                checkAndNotifyLockedApps()
+            }
+            
+            serviceScope.launch {
+                AppLogger.i("AppLockService", "Launching monitoring coroutine")
                 while (isMonitoring) {
                     checkAppUsage()
                     delay(MONITORING_INTERVAL)
                 }
             }
+            
+            AppLogger.i("AppLockService", "✅ All services and coroutines started successfully")
         } catch (e: SecurityException) {
             // Handle security exceptions (e.g., missing permissions)
             isMonitoring = false
@@ -131,6 +146,7 @@ class AppLockService : Service() {
             AppLogger.i("AppLockService", "Usage stats permission granted, proceeding with monitoring")
             
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            AppLogger.i("AppLockService", "=== APP USAGE CHECK ===")
             
             // Get today's usage stats using the helper function
             val usageStats = getTodaysUsageStats(usageStatsManager)
@@ -222,6 +238,12 @@ class AppLockService : Service() {
                 } else {
                     AppLogger.d("AppLockService", "App within time limit: ${setting.appName} (${timeUsedMinutes}min <= ${setting.dailyTimeLimit}min)")
                 }
+                
+                // Check if app is already locked and notify overlay service
+                if (setting.isLocked) {
+                    AppLogger.i("AppLockService", "App is already locked: ${setting.appName}, notifying overlay service")
+                    showAppLockedOverlay(setting.appName, setting.packageName, setting.timeUsedToday, setting.dailyTimeLimit, setting.pushUpRequirement)
+                }
             }
             
             // Reset daily usage at midnight
@@ -282,6 +304,12 @@ class AppLockService : Service() {
         pushUpRequirement: Int
     ) {
         try {
+            AppLogger.i("AppLockService", "=== SERVICE COMMUNICATION DEBUG ===")
+            AppLogger.i("AppLockService", "Showing overlay for $appName")
+            AppLogger.i("AppLockService", "Package: $packageName")
+            AppLogger.i("AppLockService", "Time used: $timeUsed, Limit: $timeLimit")
+            AppLogger.i("AppLockService", "Push-up requirement: $pushUpRequirement")
+            
             val intent = Intent(this, com.example.pushapp.service.AppLockOverlayService::class.java).apply {
                 action = com.example.pushapp.service.AppLockOverlayService.ACTION_SHOW_OVERLAY
                 putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_PACKAGE_NAME, packageName)
@@ -291,11 +319,17 @@ class AppLockService : Service() {
                 putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_PUSH_UP_REQUIREMENT, pushUpRequirement)
             }
             
-            startService(intent)
-            AppLogger.i("AppLockService", "Overlay service started for locked app: $appName")
+            AppLogger.i("AppLockService", "Intent created: $intent")
+            AppLogger.i("AppLockService", "Intent action: ${intent.action}")
+            AppLogger.i("AppLockService", "Intent extras: ${intent.extras}")
+            
+            val result = startService(intent)
+            AppLogger.i("AppLockService", "✅ Overlay intent sent to AppLockOverlayService, result: $result")
             
         } catch (e: Exception) {
-            AppLogger.e("AppLockService", "Failed to start overlay service for $appName", e)
+            AppLogger.e("AppLockService", "❌ Failed to start overlay service for $appName", e)
+            AppLogger.e("AppLockService", "Error type: ${e.javaClass.simpleName}")
+            AppLogger.e("AppLockService", "Error message: ${e.message}")
         }
     }
     
@@ -464,128 +498,84 @@ class AppLockService : Service() {
         }
     }
     
-    private fun checkInstagramUsageManually() {
-        serviceScope.launch {
-            try {
-                AppLogger.i("AppLockService", "Manually checking Instagram usage...")
-                
-                // Get Instagram settings from database
-                val instagramSettings = database.appLockDao().getAppLockSettings("com.instagram.android")
-                if (instagramSettings == null) {
-                    AppLogger.w("AppLockService", "Instagram not found in database")
-                    return@launch
-                }
-                
-                AppLogger.i("AppLockService", "Instagram settings: timeLimit=${instagramSettings.dailyTimeLimit}, isLocked=${instagramSettings.isLocked}")
-                
-                // Get current usage
-                val usageDataService = UsageDataService(this@AppLockService)
-                val usageData = usageDataService.getUsageChartData()
-                val instagramUsage = usageData.topApps.find { it.packageName == "com.instagram.android" }
-                
-                if (instagramUsage != null) {
-                    AppLogger.i("AppLockService", "Instagram usage found: ${instagramUsage.timeUsedMinutes} minutes")
-                    
-                    if (instagramUsage.timeUsedMinutes > instagramSettings.dailyTimeLimit) {
-                        AppLogger.i("AppLockService", "Instagram exceeds time limit! Triggering lock...")
-                        
-                        // Update database to mark as locked
-                        val lockedSetting = instagramSettings.copy(isLocked = true, timeUsedToday = instagramUsage.timeUsedMinutes)
-                        database.appLockDao().updateAppLockSettings(lockedSetting)
-                        
-                        // Show overlay
-                        showAppLockedOverlay(
-                            instagramSettings.appName,
-                            instagramSettings.packageName,
-                            instagramUsage.timeUsedMinutes,
-                            instagramSettings.dailyTimeLimit,
-                            instagramSettings.pushUpRequirement
-                        )
-                        
-                        // Show notification
-                        showAppLockedNotification(instagramSettings.appName, instagramSettings.packageName)
-                    } else {
-                        AppLogger.i("AppLockService", "Instagram within time limit: ${instagramUsage.timeUsedMinutes} <= ${instagramSettings.dailyTimeLimit}")
-                    }
-                } else {
-                    AppLogger.w("AppLockService", "No Instagram usage data found")
-                }
-            } catch (e: Exception) {
-                AppLogger.e("AppLockService", "Error checking Instagram usage manually", e)
-            }
-        }
-    }
     
-    private fun forceLockInstagram() {
-        serviceScope.launch {
-            try {
-                AppLogger.i("AppLockService", "Force locking Instagram...")
-                
-                // Get Instagram settings from database
-                val instagramSettings = database.appLockDao().getAppLockSettings("com.instagram.android")
-                if (instagramSettings == null) {
-                    AppLogger.w("AppLockService", "Instagram not found in database")
-                    return@launch
-                }
-                
-                // Force lock Instagram regardless of usage
-                val lockedSetting = instagramSettings.copy(isLocked = true, timeUsedToday = 999) // High number to ensure it's locked
-                database.appLockDao().updateAppLockSettings(lockedSetting)
-                
-                AppLogger.i("AppLockService", "Instagram force locked in database")
-                
-                // Show overlay immediately
-                showAppLockedOverlay(
-                    instagramSettings.appName,
-                    instagramSettings.packageName,
-                    999,
-                    instagramSettings.dailyTimeLimit,
-                    instagramSettings.pushUpRequirement
-                )
-                
-                // Show notification
-                showAppLockedNotification(instagramSettings.appName, instagramSettings.packageName)
-                
-                AppLogger.i("AppLockService", "Instagram overlay and notification sent")
-            } catch (e: Exception) {
-                AppLogger.e("AppLockService", "Error force locking Instagram", e)
-            }
-        }
-    }
     
     private fun autoLockInstagramForTesting() {
         serviceScope.launch {
             try {
-                AppLogger.i("AppLockService", "Auto-locking Instagram for testing...")
+                AppLogger.i("AppLockService", "=== DATABASE CONFIGURATION DEBUG ===")
+                AppLogger.i("AppLockService", "Setting up Instagram monitoring...")
+                
+                // Check database connection
+                AppLogger.i("AppLockService", "Database: $database")
+                AppLogger.i("AppLockService", "Database DAO: ${database.appLockDao()}")
                 
                 // Get Instagram settings from database
                 val instagramSettings = database.appLockDao().getAppLockSettings("com.instagram.android")
+                AppLogger.i("AppLockService", "Instagram settings query result: $instagramSettings")
+                
                 if (instagramSettings == null) {
-                    AppLogger.w("AppLockService", "Instagram not found in database, creating default settings")
+                    AppLogger.w("AppLockService", "❌ Instagram not found in database, creating default settings")
                     // Create default Instagram settings if not found
                     val defaultSettings = com.example.pushapp.data.AppLockSettings(
                         packageName = "com.instagram.android",
                         appName = "Instagram",
-                        isLocked = true,
+                        isLocked = false, // Start unlocked
                         dailyTimeLimit = 60,
                         pushUpRequirement = 10,
-                        timeUsedToday = 999 // High number to ensure it's locked
+                        timeUsedToday = 0 // Start with 0 usage
                     )
+                    AppLogger.i("AppLockService", "Creating default settings: $defaultSettings")
+                    
                     database.appLockDao().insertAppLockSettings(defaultSettings)
-                    AppLogger.i("AppLockService", "Created default Instagram settings with lock enabled")
+                    AppLogger.i("AppLockService", "✅ Created default Instagram settings - unlocked initially")
+                    
+                    // Verify insertion
+                    val verifySettings = database.appLockDao().getAppLockSettings("com.instagram.android")
+                    AppLogger.i("AppLockService", "Verification query result: $verifySettings")
                 } else {
-                    // Update existing settings to be locked
-                    val lockedSetting = instagramSettings.copy(isLocked = true, timeUsedToday = 999)
-                    database.appLockDao().updateAppLockSettings(lockedSetting)
-                    AppLogger.i("AppLockService", "Updated Instagram settings to be locked")
+                    AppLogger.i("AppLockService", "✅ Instagram settings found:")
+                    AppLogger.i("AppLockService", "  - Package: ${instagramSettings.packageName}")
+                    AppLogger.i("AppLockService", "  - App Name: ${instagramSettings.appName}")
+                    AppLogger.i("AppLockService", "  - Is Locked: ${instagramSettings.isLocked}")
+                    AppLogger.i("AppLockService", "  - Time Limit: ${instagramSettings.dailyTimeLimit}")
+                    AppLogger.i("AppLockService", "  - Time Used Today: ${instagramSettings.timeUsedToday}")
+                    AppLogger.i("AppLockService", "  - Push Up Requirement: ${instagramSettings.pushUpRequirement}")
                 }
                 
-                AppLogger.i("AppLockService", "Instagram is now permanently locked for testing")
-                
+                AppLogger.i("AppLockService", "✅ Instagram monitoring setup complete")
                 
             } catch (e: Exception) {
-                AppLogger.e("AppLockService", "Error auto-locking Instagram", e)
+                AppLogger.e("AppLockService", "❌ Error setting up Instagram monitoring", e)
+                AppLogger.e("AppLockService", "Error type: ${e.javaClass.simpleName}")
+                AppLogger.e("AppLockService", "Error message: ${e.message}")
+                AppLogger.e("AppLockService", "Error stack trace: ${e.stackTrace.joinToString("\n")}")
             }
+        }
+    }
+    
+    private suspend fun checkAndNotifyLockedApps() {
+        try {
+            AppLogger.i("AppLockService", "=== CHECKING ALREADY LOCKED APPS ===")
+            
+            // Get all app lock settings from database
+            val allSettings = database.appLockDao().getAllAppLockSettings().first()
+            AppLogger.i("AppLockService", "Found ${allSettings.size} app settings in database")
+            
+            // Find all locked apps
+            val lockedApps = allSettings.filter { it.isLocked }
+            AppLogger.i("AppLockService", "Found ${lockedApps.size} locked apps: ${lockedApps.map { it.appName }}")
+            
+            // Notify overlay service for each locked app
+            lockedApps.forEach { setting ->
+                AppLogger.i("AppLockService", "Notifying overlay service for locked app: ${setting.appName}")
+                showAppLockedOverlay(setting.appName, setting.packageName, setting.timeUsedToday, setting.dailyTimeLimit, setting.pushUpRequirement)
+            }
+            
+            AppLogger.i("AppLockService", "✅ Completed notification for all locked apps")
+            
+        } catch (e: Exception) {
+            AppLogger.e("AppLockService", "Failed to check and notify locked apps", e)
         }
     }
     
