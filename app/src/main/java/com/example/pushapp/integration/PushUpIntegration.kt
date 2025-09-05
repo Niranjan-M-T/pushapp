@@ -6,7 +6,6 @@ import com.example.pushapp.PushUpViewModel
 import com.example.pushapp.data.AppLockSettings
 import com.example.pushapp.ui.PushUpScreen
 import com.example.pushapp.ui.theme.*
-
 @Composable
 fun PushUpIntegration(
     pushUpViewModel: PushUpViewModel,
@@ -29,6 +28,7 @@ fun PushUpIntegration(
     // Start counting automatically when screen loads
     LaunchedEffect(Unit) {
         if (!isCounting) {
+            @Suppress("UnsafeOptInUsageError")
             pushUpViewModel.startCounting()
         }
     }

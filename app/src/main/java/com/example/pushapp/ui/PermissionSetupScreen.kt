@@ -47,7 +47,7 @@ fun PermissionSetupScreen(
     }
     
     // Refresh permissions when returning from settings
-    val refreshPermissions = {
+    val refreshPermissions: () -> Unit = {
         scope.launch {
             isCheckingPermissions = true
             permissionState = permissionChecker.checkAllPermissions()
@@ -448,8 +448,8 @@ private fun PermissionItem(
 private fun getPermissionIcon(permission: String): ImageVector {
     return when (permission) {
         PermissionChecker.PERMISSION_USAGE_STATS -> Icons.Default.Info
-        PermissionChecker.PERMISSION_OVERLAY -> Icons.Default.Layers
-        PermissionChecker.PERMISSION_CAMERA -> Icons.Default.Camera
+        PermissionChecker.PERMISSION_OVERLAY -> Icons.Default.Settings
+        PermissionChecker.PERMISSION_CAMERA -> Icons.Default.Info
         PermissionChecker.PERMISSION_NOTIFICATIONS -> Icons.Default.Notifications
         PermissionChecker.PERMISSION_FOREGROUND_SERVICE -> Icons.Default.Settings
         else -> Icons.Default.Lock

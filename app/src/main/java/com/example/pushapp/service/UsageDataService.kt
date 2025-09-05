@@ -88,13 +88,44 @@ class UsageDataService(private val context: Context) {
         calendar.set(Calendar.MILLISECOND, 0)
         val startTime = calendar.timeInMillis
         
+        AppLogger.d("UsageDataService", "Getting today's usage stats from ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(startTime))} to ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(endTime))}")
+        
         return try {
-            val stats = usageStatsManager.queryUsageStats(
+            // Try multiple intervals to get more comprehensive data
+            val allStats = mutableListOf<UsageStats>()
+            
+            // First try INTERVAL_BEST for the most accurate data
+            val bestStats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_BEST,
                 startTime,
                 endTime
             )
-            stats ?: emptyList()
+            bestStats?.let { allStats.addAll(it) }
+            
+            // Also try INTERVAL_DAILY as fallback
+            val dailyStats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                startTime,
+                endTime
+            )
+            dailyStats?.let { allStats.addAll(it) }
+            
+            // Merge and deduplicate stats by package name, keeping the one with highest usage
+            val mergedStats = allStats.groupBy { it.packageName }
+                .mapValues { (_, stats) ->
+                    stats.maxByOrNull { it.totalTimeInForeground } ?: stats.first()
+                }
+                .values
+                .toList()
+            
+            AppLogger.d("UsageDataService", "Retrieved ${mergedStats.size} usage stats entries (merged from ${allStats.size} total)")
+            
+            // Log some sample data for debugging
+            mergedStats.take(5).forEach { stat ->
+                AppLogger.d("UsageDataService", "Sample usage: ${stat.packageName} - ${stat.totalTimeInForeground}ms")
+            }
+            
+            mergedStats
         } catch (e: Exception) {
             AppLogger.e("UsageDataService", "Failed to query usage stats", e)
             emptyList()

@@ -205,11 +205,29 @@ fun LogViewerScreen(
                         fontWeight = FontWeight.Bold
                     )
                     
-                    if (logs.isNotEmpty()) {
-                        Text(
-                            text = "${logs.lines().size} lines",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (logs.isNotEmpty()) {
+                            Text(
+                                text = "${logs.lines().size} lines",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            
+                            IconButton(
+                                onClick = {
+                                    val success = logExporter.copyLogsToClipboard(logs)
+                                    showCopySuccess = success
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Copy logs",
+                                    tint = PrimaryRed
+                                )
+                            }
+                        }
                     }
                 }
                 
@@ -340,7 +358,7 @@ private fun ExportLogsDialog(
                 OutlinedButton(
                     onClick = onCopyToClipboard
                 ) {
-                    Icon(Icons.Default.Copy, contentDescription = null)
+                    Icon(Icons.Default.Share, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Copy")
                 }
@@ -358,14 +376,14 @@ private fun ExportLogsDialog(
                 Button(
                     onClick = onExportToFile
                 ) {
-                    Icon(Icons.Default.Save, contentDescription = null)
+                    Icon(Icons.Default.Check, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Save")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss) { 
                 Text("Cancel")
             }
         }

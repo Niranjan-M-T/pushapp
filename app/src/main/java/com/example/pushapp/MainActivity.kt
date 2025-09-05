@@ -1,6 +1,7 @@
 package com.example.pushapp
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -48,7 +49,33 @@ class MainActivity : ComponentActivity() {
     private val requestUsageStatsPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        // Handle usage stats permission result
+        // Check if usage stats permission was granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val appOpsManager = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+            val mode = appOpsManager.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+            if (mode == android.app.AppOpsManager.MODE_ALLOWED) {
+                android.util.Log.d("MainActivity", "Usage stats permission granted")
+            } else {
+                android.util.Log.w("MainActivity", "Usage stats permission denied")
+            }
+        }
+    }
+    
+    private val requestOverlayPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Check if overlay permission was granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Settings.canDrawOverlays(this)) {
+                android.util.Log.d("MainActivity", "Overlay permission granted")
+            } else {
+                android.util.Log.w("MainActivity", "Overlay permission denied")
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,23 +105,6 @@ class MainActivity : ComponentActivity() {
         }
     }
     
-    private fun hasOverlayPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else {
-            true
-        }
-    }
-    
-    private fun requestOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                android.net.Uri.parse("package:$packageName")
-            )
-            startActivity(intent)
-        }
-    }
 }
 
 @Composable
@@ -178,13 +188,8 @@ fun AppNavigation(
                 onStartPushUps = {
                     navController.navigate("pushup")
                 },
-                onStartMonitoring = {
-                    appLockViewModel.startMonitoring()
-                },
-                onStopMonitoring = {
-                    appLockViewModel.stopMonitoring()
-                },
                 onViewLogs = {
+                    android.util.Log.d("MainActivity", "View Logs clicked, navigating to logs")
                     navController.navigate("logs")
                 },
                 onViewUsageChart = {
@@ -193,7 +198,9 @@ fun AppNavigation(
                 onOpenPermissions = {
                     navController.navigate("permissions")
                 },
-                isMonitoring = uiState.isMonitoring
+                onOpenAppsLocked = {
+                    navController.navigate("apps-locked")
+                }
             )
         }
         
@@ -212,6 +219,27 @@ fun AppNavigation(
                 },
                 onSaveSettings = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        composable("apps-locked") {
+            AppsLockedScreen(
+                lockedApps = appLockSettings,
+                onBack = {
+                    navController.popBackStack()
+                },
+                onTimeLimitChange = { packageName, timeLimit ->
+                    appLockViewModel.updateTimeLimit(packageName, timeLimit)
+                },
+                onPushUpRequirementChange = { packageName, pushUpCount ->
+                    appLockViewModel.updatePushUpRequirement(packageName, pushUpCount)
+                },
+                onToggleAppLock = { packageName, isLocked ->
+                    val app = installedApps.find { it.packageName == packageName }
+                    if (app != null) {
+                        appLockViewModel.toggleAppLock(app, isLocked)
+                    }
                 }
             )
         }

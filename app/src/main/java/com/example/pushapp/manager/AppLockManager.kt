@@ -8,6 +8,7 @@ import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
 import com.example.pushapp.data.*
 import com.example.pushapp.service.AppLockService
+import com.example.pushapp.service.AppLockOverlayService
 import com.example.pushapp.utils.AppLogger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -132,6 +133,7 @@ class AppLockManager(private val context: Context) {
     
     fun startMonitoring() {
         try {
+            AppLogger.i("AppLockManager", "Starting monitoring service...")
             val intent = Intent(context, AppLockService::class.java).apply {
                 action = "START_MONITORING"
             }
@@ -139,14 +141,18 @@ class AppLockManager(private val context: Context) {
             // Check if we can start the service
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
+                AppLogger.i("AppLockManager", "Started foreground service")
             } else {
                 context.startService(intent)
+                AppLogger.i("AppLockManager", "Started service")
             }
         } catch (e: SecurityException) {
             // Handle security exceptions (e.g., missing permissions)
+            AppLogger.e("AppLockManager", "Security exception when starting service", e)
             throw e
         } catch (e: Exception) {
             // Handle other exceptions
+            AppLogger.e("AppLockManager", "Exception when starting service", e)
             throw e
         }
     }
@@ -184,6 +190,37 @@ class AppLockManager(private val context: Context) {
             AppLogger.i("AppLockManager", "Default push-up settings created")
         } else {
             AppLogger.d("AppLockManager", "Push-up settings already exist")
+        }
+    }
+    
+    fun testOverlay() {
+        try {
+            AppLogger.i("AppLockManager", "Testing overlay...")
+            val intent = Intent(context, AppLockOverlayService::class.java).apply {
+                action = AppLockOverlayService.ACTION_TEST_OVERLAY
+            }
+            context.startService(intent)
+            AppLogger.i("AppLockManager", "Test overlay service started")
+        } catch (e: Exception) {
+            AppLogger.e("AppLockManager", "Failed to test overlay", e)
+        }
+    }
+    
+    fun forceShowOverlayForApp(packageName: String, appName: String, timeUsed: Int, timeLimit: Int, pushUpRequirement: Int) {
+        try {
+            AppLogger.i("AppLockManager", "Force showing overlay for $appName...")
+            val intent = Intent(context, AppLockOverlayService::class.java).apply {
+                action = AppLockOverlayService.ACTION_SHOW_OVERLAY
+                putExtra(AppLockOverlayService.EXTRA_PACKAGE_NAME, packageName)
+                putExtra(AppLockOverlayService.EXTRA_APP_NAME, appName)
+                putExtra(AppLockOverlayService.EXTRA_TIME_USED, timeUsed)
+                putExtra(AppLockOverlayService.EXTRA_TIME_LIMIT, timeLimit)
+                putExtra(AppLockOverlayService.EXTRA_PUSH_UP_REQUIREMENT, pushUpRequirement)
+            }
+            context.startService(intent)
+            AppLogger.i("AppLockManager", "Force overlay service started for $appName")
+        } catch (e: Exception) {
+            AppLogger.e("AppLockManager", "Failed to force show overlay for $appName", e)
         }
     }
 }

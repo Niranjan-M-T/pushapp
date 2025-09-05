@@ -57,7 +57,10 @@
         <service
             android:name=".service.AppLockOverlayService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+            
+        <!-- Small Overlay Service -->
             
         <!-- File Provider for sharing logs -->
         <provider

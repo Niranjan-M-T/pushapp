@@ -48,6 +48,7 @@ fun PushUpScreen(
             var cameraErrorMessage by remember { mutableStateOf("") }
             
             if (!cameraError) {
+                @Suppress("UnsafeOptInUsageError")
                 CameraPreview(
                     viewModel = pushUpViewModel,
                     onCameraError = { error ->

@@ -183,7 +183,7 @@ private fun UsageSummaryCard(usageData: UsageChartData) {
                 StatItem(
                     label = "Total Time",
                     value = formatTime(usageData.totalUsageMinutes),
-                    icon = Icons.Default.AccessTime
+                    icon = Icons.Default.Info
                 )
             }
         }
@@ -239,23 +239,12 @@ private fun AppUsageItem(appUsage: AppUsageData) {
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                if (appUsage.icon != null) {
-                    androidx.compose.ui.platform.LocalContext.current.let { context ->
-                        androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(
-                                android.R.drawable.sym_def_app_icon
-                            ),
-                            contentDescription = appUsage.appName,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                } else {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = appUsage.appName,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
             
             Spacer(modifier = Modifier.width(16.dp))
