@@ -78,23 +78,10 @@ class AppLockService : Service() {
             startForeground(NOTIFICATION_ID, createNotification())
             AppLogger.i("AppLockService", "✅ Started foreground service")
             
-            // Start the overlay service to monitor foreground apps
-            val overlayIntent = Intent(this, com.example.pushapp.service.AppLockOverlayService::class.java)
-            AppLogger.i("AppLockService", "Starting overlay service with intent: $overlayIntent")
-            
-            val overlayServiceResult = startService(overlayIntent)
-            AppLogger.i("AppLockService", "✅ Started overlay service, result: $overlayServiceResult")
-            
             // Auto-lock Instagram for testing
             serviceScope.launch {
                 AppLogger.i("AppLockService", "Launching Instagram setup coroutine")
                 autoLockInstagramForTesting()
-            }
-            
-            // Check for already locked apps and notify overlay service
-            serviceScope.launch {
-                AppLogger.i("AppLockService", "Launching locked apps check coroutine")
-                checkAndNotifyLockedApps()
             }
             
             serviceScope.launch {
@@ -226,10 +213,6 @@ class AppLockService : Service() {
                         database.appLockDao().updateAppLockSettings(lockedSetting)
                         AppLogger.i("AppLockService", "App locked: ${setting.appName} (${timeUsedMinutes}min > ${setting.dailyTimeLimit}min)")
                         
-                        // Show overlay to lock the app
-                        AppLogger.i("AppLockService", "Triggering overlay for locked app: ${setting.appName}")
-                        showAppLockedOverlay(setting.appName, setting.packageName, timeUsedMinutes, setting.dailyTimeLimit, setting.pushUpRequirement)
-                        
                         // Also show notification
                         showAppLockedNotification(setting.appName, setting.packageName)
                     } catch (e: Exception) {
@@ -237,12 +220,6 @@ class AppLockService : Service() {
                     }
                 } else {
                     AppLogger.d("AppLockService", "App within time limit: ${setting.appName} (${timeUsedMinutes}min <= ${setting.dailyTimeLimit}min)")
-                }
-                
-                // Check if app is already locked and notify overlay service
-                if (setting.isLocked) {
-                    AppLogger.i("AppLockService", "App is already locked: ${setting.appName}, notifying overlay service")
-                    showAppLockedOverlay(setting.appName, setting.packageName, setting.timeUsedToday, setting.dailyTimeLimit, setting.pushUpRequirement)
                 }
             }
             
@@ -294,43 +271,6 @@ class AppLockService : Service() {
         notificationManager.notify(NOTIFICATION_ID + 1, notification)
         
         AppLogger.i("AppLockService", "Notification sent for locked app: $appName")
-    }
-    
-    private fun showAppLockedOverlay(
-        appName: String,
-        packageName: String,
-        timeUsed: Int,
-        timeLimit: Int,
-        pushUpRequirement: Int
-    ) {
-        try {
-            AppLogger.i("AppLockService", "=== SERVICE COMMUNICATION DEBUG ===")
-            AppLogger.i("AppLockService", "Showing overlay for $appName")
-            AppLogger.i("AppLockService", "Package: $packageName")
-            AppLogger.i("AppLockService", "Time used: $timeUsed, Limit: $timeLimit")
-            AppLogger.i("AppLockService", "Push-up requirement: $pushUpRequirement")
-            
-            val intent = Intent(this, com.example.pushapp.service.AppLockOverlayService::class.java).apply {
-                action = com.example.pushapp.service.AppLockOverlayService.ACTION_SHOW_OVERLAY
-                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_PACKAGE_NAME, packageName)
-                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_APP_NAME, appName)
-                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_TIME_USED, timeUsed)
-                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_TIME_LIMIT, timeLimit)
-                putExtra(com.example.pushapp.service.AppLockOverlayService.EXTRA_PUSH_UP_REQUIREMENT, pushUpRequirement)
-            }
-            
-            AppLogger.i("AppLockService", "Intent created: $intent")
-            AppLogger.i("AppLockService", "Intent action: ${intent.action}")
-            AppLogger.i("AppLockService", "Intent extras: ${intent.extras}")
-            
-            val result = startService(intent)
-            AppLogger.i("AppLockService", "✅ Overlay intent sent to AppLockOverlayService, result: $result")
-            
-        } catch (e: Exception) {
-            AppLogger.e("AppLockService", "❌ Failed to start overlay service for $appName", e)
-            AppLogger.e("AppLockService", "Error type: ${e.javaClass.simpleName}")
-            AppLogger.e("AppLockService", "Error message: ${e.message}")
-        }
     }
     
     private fun showPermissionRequiredNotification() {
@@ -551,31 +491,6 @@ class AppLockService : Service() {
                 AppLogger.e("AppLockService", "Error message: ${e.message}")
                 AppLogger.e("AppLockService", "Error stack trace: ${e.stackTrace.joinToString("\n")}")
             }
-        }
-    }
-    
-    private suspend fun checkAndNotifyLockedApps() {
-        try {
-            AppLogger.i("AppLockService", "=== CHECKING ALREADY LOCKED APPS ===")
-            
-            // Get all app lock settings from database
-            val allSettings = database.appLockDao().getAllAppLockSettings().first()
-            AppLogger.i("AppLockService", "Found ${allSettings.size} app settings in database")
-            
-            // Find all locked apps
-            val lockedApps = allSettings.filter { it.isLocked }
-            AppLogger.i("AppLockService", "Found ${lockedApps.size} locked apps: ${lockedApps.map { it.appName }}")
-            
-            // Notify overlay service for each locked app
-            lockedApps.forEach { setting ->
-                AppLogger.i("AppLockService", "Notifying overlay service for locked app: ${setting.appName}")
-                showAppLockedOverlay(setting.appName, setting.packageName, setting.timeUsedToday, setting.dailyTimeLimit, setting.pushUpRequirement)
-            }
-            
-            AppLogger.i("AppLockService", "✅ Completed notification for all locked apps")
-            
-        } catch (e: Exception) {
-            AppLogger.e("AppLockService", "Failed to check and notify locked apps", e)
         }
     }
     
