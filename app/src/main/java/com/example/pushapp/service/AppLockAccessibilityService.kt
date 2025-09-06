@@ -20,6 +20,11 @@ class AppLockAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val packageName = "com.example.pushapp"
     
+    // Smart launcher detection - track recent app changes to avoid false launcher detections
+    private var lastNonLauncherApp: String? = null
+    private var launcherDetectionCount = 0
+    private val maxLauncherDetectionCount = 3 // Require 3 consecutive launcher detections
+    
     companion object {
         private const val TAG = "AppLockAccessibilityService"
     }
@@ -68,10 +73,29 @@ class AppLockAccessibilityService : AccessibilityService() {
                         return@launch
                     }
                     isLauncherPackage(foregroundPackage) -> {
-                        AppLogger.d(TAG, "Launcher detected - hiding all overlays")
-                        hideAllOverlays()
-                        return@launch
+                        // Smart launcher detection - require multiple consecutive detections to avoid false positives
+                        launcherDetectionCount++
+                        AppLogger.d(TAG, "Launcher detected (count: $launcherDetectionCount/$maxLauncherDetectionCount)")
+                        
+                        if (launcherDetectionCount >= maxLauncherDetectionCount) {
+                            AppLogger.d(TAG, "Launcher confirmed - hiding all overlays")
+                            hideAllOverlays()
+                            launcherDetectionCount = 0 // Reset counter
+                            return@launch
+                        } else {
+                            AppLogger.d(TAG, "Launcher detection not confirmed yet - waiting for more detections")
+                            return@launch
+                        }
                     }
+                }
+                
+                // Reset launcher detection counter when we detect a non-launcher app
+                if (!isLauncherPackage(foregroundPackage) && foregroundPackage != "com.example.pushapp") {
+                    if (launcherDetectionCount > 0) {
+                        AppLogger.d(TAG, "Non-launcher app detected - resetting launcher detection counter")
+                        launcherDetectionCount = 0
+                    }
+                    lastNonLauncherApp = foregroundPackage
                 }
                 
                 // Check if this app should be locked
