@@ -20,13 +20,15 @@ class PermissionChecker(private val context: Context) {
         const val PERMISSION_CAMERA = "camera"
         const val PERMISSION_NOTIFICATIONS = "notifications"
         const val PERMISSION_FOREGROUND_SERVICE = "foreground_service"
+        const val PERMISSION_ACCESSIBILITY = "accessibility"
     }
     
     fun checkAllPermissions(): PermissionState {
         val requiredPermissions = listOf(
             checkUsageStatsPermission(),
             checkOverlayPermission(),
-            checkCameraPermission()
+            checkCameraPermission(),
+            checkAccessibilityPermission()
         )
         
         val optionalPermissions = listOf(
@@ -153,18 +155,27 @@ class PermissionChecker(private val context: Context) {
     }
     
     fun openPermissionSettings(permissionInfo: PermissionInfo) {
-        try {
-            context.startActivity(permissionInfo.settingsIntent)
-        } catch (e: Exception) {
-            AppLogger.e("PermissionChecker", "Failed to open settings for ${permissionInfo.permission}", e)
-            // Fallback to general app settings
-            try {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:${context.packageName}")
+        when (permissionInfo.permission) {
+            PERMISSION_ACCESSIBILITY -> {
+                AccessibilityHelper.openAccessibilitySettings(context)
+            }
+            else -> {
+                try {
+                    permissionInfo.settingsIntent?.let { intent ->
+                        context.startActivity(intent)
+                    }
+                } catch (e: Exception) {
+                    AppLogger.e("PermissionChecker", "Failed to open settings for ${permissionInfo.permission}", e)
+                    // Fallback to general app settings
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                        context.startActivity(intent)
+                    } catch (e2: Exception) {
+                        AppLogger.e("PermissionChecker", "Failed to open app settings", e2)
+                    }
                 }
-                context.startActivity(intent)
-            } catch (e2: Exception) {
-                AppLogger.e("PermissionChecker", "Failed to open app settings", e2)
             }
         }
     }
@@ -179,4 +190,17 @@ class PermissionChecker(private val context: Context) {
             else -> "Permission status unknown"
         }
     }
+    
+    private fun checkAccessibilityPermission(): PermissionInfo {
+        val isGranted = AccessibilityHelper.isAccessibilityServiceEnabled(context)
+        return PermissionInfo(
+            permission = PERMISSION_ACCESSIBILITY,
+            displayName = "Accessibility Service",
+            description = "Required for instant app detection and better performance",
+            isGranted = isGranted,
+            isRequired = true,
+            settingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        )
+    }
+    
 }

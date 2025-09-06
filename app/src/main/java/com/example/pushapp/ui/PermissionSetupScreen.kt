@@ -452,6 +452,7 @@ private fun getPermissionIcon(permission: String): ImageVector {
         PermissionChecker.PERMISSION_CAMERA -> Icons.Default.Info
         PermissionChecker.PERMISSION_NOTIFICATIONS -> Icons.Default.Notifications
         PermissionChecker.PERMISSION_FOREGROUND_SERVICE -> Icons.Default.Settings
+        PermissionChecker.PERMISSION_ACCESSIBILITY -> Icons.Default.Settings
         else -> Icons.Default.Lock
     }
 }

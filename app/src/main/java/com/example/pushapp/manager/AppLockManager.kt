@@ -196,11 +196,10 @@ class AppLockManager(private val context: Context) {
     fun testOverlay() {
         try {
             AppLogger.i("AppLockManager", "Testing overlay...")
-            val intent = Intent(context, AppLockOverlayService::class.java).apply {
-                action = AppLockOverlayService.ACTION_TEST_OVERLAY
-            }
+            // The new service automatically monitors and shows overlays
+            val intent = Intent(context, AppLockOverlayService::class.java)
             context.startService(intent)
-            AppLogger.i("AppLockManager", "Test overlay service started")
+            AppLogger.i("AppLockManager", "Overlay service started")
         } catch (e: Exception) {
             AppLogger.e("AppLockManager", "Failed to test overlay", e)
         }
@@ -209,18 +208,13 @@ class AppLockManager(private val context: Context) {
     fun forceShowOverlayForApp(packageName: String, appName: String, timeUsed: Int, timeLimit: Int, pushUpRequirement: Int) {
         try {
             AppLogger.i("AppLockManager", "Force showing overlay for $appName...")
-            val intent = Intent(context, AppLockOverlayService::class.java).apply {
-                action = AppLockOverlayService.ACTION_SHOW_OVERLAY
-                putExtra(AppLockOverlayService.EXTRA_PACKAGE_NAME, packageName)
-                putExtra(AppLockOverlayService.EXTRA_APP_NAME, appName)
-                putExtra(AppLockOverlayService.EXTRA_TIME_USED, timeUsed)
-                putExtra(AppLockOverlayService.EXTRA_TIME_LIMIT, timeLimit)
-                putExtra(AppLockOverlayService.EXTRA_PUSH_UP_REQUIREMENT, pushUpRequirement)
-            }
+            // The new service automatically monitors and shows overlays based on database
+            // We just need to start the service
+            val intent = Intent(context, AppLockOverlayService::class.java)
             context.startService(intent)
-            AppLogger.i("AppLockManager", "Force overlay service started for $appName")
+            AppLogger.i("AppLockManager", "Overlay service started")
         } catch (e: Exception) {
-            AppLogger.e("AppLockManager", "Failed to force show overlay for $appName", e)
+            AppLogger.e("AppLockManager", "Failed to force show overlay", e)
         }
     }
 }

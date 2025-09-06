@@ -78,6 +78,9 @@ class AppLockService : Service() {
             startForeground(NOTIFICATION_ID, createNotification())
             AppLogger.i("AppLockService", "✅ Started foreground service")
             
+            // Start overlay service to monitor and show overlays
+            startOverlayService()
+            
             // Auto-lock Instagram for testing
             serviceScope.launch {
                 AppLogger.i("AppLockService", "Launching Instagram setup coroutine")
@@ -85,7 +88,7 @@ class AppLockService : Service() {
             }
             
             serviceScope.launch {
-                AppLogger.i("AppLockService", "Launching monitoring coroutine")
+                AppLogger.i("AppLockService", "Launching optimized monitoring coroutine (10s intervals)")
                 while (isMonitoring) {
                     checkAppUsage()
                     delay(MONITORING_INTERVAL)
@@ -133,7 +136,7 @@ class AppLockService : Service() {
             AppLogger.i("AppLockService", "Usage stats permission granted, proceeding with monitoring")
             
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            AppLogger.i("AppLockService", "=== APP USAGE CHECK ===")
+            // App usage check (reduced logging for performance)
             
             // Get today's usage stats using the helper function
             val usageStats = getTodaysUsageStats(usageStatsManager)
@@ -172,7 +175,11 @@ class AppLockService : Service() {
                 }
                 
                 val timeUsedMinutes = if (appUsage != null) {
-                    (appUsage.totalTimeInForeground / (1000 * 60)).toInt()
+                    // Convert milliseconds to minutes, ensuring accurate calculation
+                    val totalMs = appUsage.totalTimeInForeground
+                    val minutes = (totalMs / (1000.0 * 60.0)).toInt()
+                    AppLogger.d("AppLockService", "Raw calculation: ${totalMs}ms / 60000 = ${minutes}min")
+                    minutes
                 } else {
                     0
                 }
@@ -194,8 +201,29 @@ class AppLockService : Service() {
                     }
                 }
                 
-                // Update time used today in database
-                val updatedSetting = setting.copy(timeUsedToday = timeUsedMinutes)
+                // Check if we need to reset daily usage (new day)
+                val calendar = Calendar.getInstance()
+                val today = calendar.get(Calendar.DAY_OF_YEAR)
+                val lastResetDay = if (setting.lastResetDate > 0) {
+                    calendar.timeInMillis = setting.lastResetDate
+                    calendar.get(Calendar.DAY_OF_YEAR)
+                } else {
+                    today
+                }
+                
+                val updatedSetting = if (today != lastResetDay) {
+                    // New day - reset usage
+                    AppLogger.i("AppLockService", "New day detected - resetting usage for ${setting.appName}")
+                    setting.copy(
+                        timeUsedToday = timeUsedMinutes,
+                        isLocked = false, // Unlock on new day
+                        lastResetDate = System.currentTimeMillis()
+                    )
+                } else {
+                    // Same day - update usage
+                    setting.copy(timeUsedToday = timeUsedMinutes)
+                }
+                
                 try {
                     database.appLockDao().updateAppLockSettings(updatedSetting)
                     AppLogger.d("AppLockService", "Updated time used for ${setting.appName}: ${timeUsedMinutes}min")
@@ -215,6 +243,9 @@ class AppLockService : Service() {
                         
                         // Also show notification
                         showAppLockedNotification(setting.appName, setting.packageName)
+                        
+                        // Start overlay service to show blocking overlay
+                        startOverlayService()
                     } catch (e: Exception) {
                         AppLogger.e("AppLockService", "Failed to lock app ${setting.appName}", e)
                     }
@@ -237,6 +268,17 @@ class AppLockService : Service() {
         } catch (e: Exception) {
             // Log the error for debugging
             AppLogger.e("AppLockService", "Error checking app usage", e)
+        }
+    }
+    
+    private fun startOverlayService() {
+        try {
+            AppLogger.i("AppLockService", "Starting AppLockOverlayService...")
+            val intent = Intent(this, com.example.pushapp.service.AppLockOverlayService::class.java)
+            val result = startService(intent)
+            AppLogger.i("AppLockService", "AppLockOverlayService start result: $result")
+        } catch (e: Exception) {
+            AppLogger.e("AppLockService", "Failed to start AppLockOverlayService", e)
         }
     }
     

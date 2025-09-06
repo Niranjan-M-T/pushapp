@@ -28,6 +28,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.pushapp.ui.*
 import com.example.pushapp.ui.theme.PushAppTheme
+import com.example.pushapp.utils.AccessibilityHelper
 import com.example.pushapp.integration.PushUpIntegration
 import com.example.pushapp.utils.AppLogger
 import com.example.pushapp.utils.PermissionChecker
@@ -138,8 +139,8 @@ class MainActivity : ComponentActivity() {
                 val lockedAppPackage = intent.getStringExtra("lockedAppPackage")
                 if (lockedAppPackage != null) {
                     AppLogger.i("MainActivity", "Opening push-up screen for locked app: $lockedAppPackage")
-                    // Navigate to push-up screen
-                    // This will be handled by the navigation system
+                    // Navigate to push-up screen directly
+                    // This will be handled by the navigation system when the composable is created
                 }
             }
         }
@@ -155,12 +156,34 @@ fun AppLockApp() {
     val permissionChecker = remember { PermissionChecker(context) }
     var permissionState by remember { mutableStateOf<PermissionState?>(null) }
     var showPermissionSetup by remember { mutableStateOf(false) }
+    var pendingPushUpNavigation by remember { mutableStateOf<String?>(null) }
     
     // Check permissions on app start
     LaunchedEffect(Unit) {
         val state = permissionChecker.checkAllPermissions()
         permissionState = state
         showPermissionSetup = !state.allPermissionsGranted
+        
+        // Check if we should navigate to push-up screen
+        val activity = context as? MainActivity
+        activity?.intent?.let { intent ->
+            if (intent.getBooleanExtra("openPushUpScreen", false)) {
+                val lockedAppPackage = intent.getStringExtra("lockedAppPackage")
+                if (lockedAppPackage != null) {
+                    AppLogger.i("MainActivity", "Setting pending push-up navigation for: $lockedAppPackage")
+                    pendingPushUpNavigation = lockedAppPackage
+                }
+            }
+        }
+    }
+    
+    // Navigate to push-up screen when pending navigation is set
+    LaunchedEffect(pendingPushUpNavigation) {
+        if (pendingPushUpNavigation != null && !showPermissionSetup) {
+            AppLogger.i("MainActivity", "Navigating to push-up screen for: $pendingPushUpNavigation")
+            navController.navigate("pushup/${pendingPushUpNavigation}")
+            pendingPushUpNavigation = null
+        }
     }
     
     Surface(

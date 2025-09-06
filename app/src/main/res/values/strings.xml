@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Push App</string>
+    <string name="accessibility_service_description">Push App uses accessibility services to detect when you open locked apps and show the push-up challenge overlay. This allows instant detection of app changes for better performance and battery life.</string>
 </resources>
