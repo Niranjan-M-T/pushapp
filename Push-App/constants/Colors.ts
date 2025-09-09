@@ -1,26 +1,57 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Push App Color Scheme
+ * Designed for a clean, vibrant, and energetic feel with proper dark mode support
  */
-
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    // Background
+    background: '#F5F5F5', // Off-White
+    
+    // Primary Colors
+    primaryAccent: '#4CAF50', // Aqua Green
+    secondaryAccent: '#2196F3', // Sky Blue
+    actionHighlight: '#FF9800', // Vibrant Orange
+    progressHighlight: '#FFEB3B', // Soft Yellow
+    
+    // Text Colors
+    text: '#000000', // Black
+    textSecondary: '#666666', // Medium Gray
+    
+    // Navigation
+    tint: '#4CAF50',
+    icon: '#666666',
+    tabIconDefault: '#666666',
+    tabIconSelected: '#4CAF50',
+    
+    // Card and Surface Colors
+    cardBackground: '#FFFFFF',
+    surface: '#FFFFFF',
+    border: '#E0E0E0',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    // Background
+    background: '#121212', // Almost Black
+    
+    // Primary Colors
+    primaryAccent: '#69F0AE', // Brighter Aqua Green
+    secondaryAccent: '#40C4FF', // Brighter Sky Blue
+    actionHighlight: '#FFB74D', // Softer Orange
+    progressHighlight: '#FFEE58', // Brighter Yellow
+    
+    // Text Colors
+    text: '#FFFFFF', // White
+    textSecondary: '#B0B0B0', // Light Gray
+    
+    // Navigation
+    tint: '#69F0AE',
+    icon: '#B0B0B0',
+    tabIconDefault: '#B0B0B0',
+    tabIconSelected: '#69F0AE',
+    
+    // Card and Surface Colors
+    cardBackground: '#1E1E1E',
+    surface: '#1E1E1E',
+    border: '#333333',
   },
 };
